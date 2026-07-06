@@ -9,6 +9,9 @@ description = "Enterprise-style RAG pipeline with structured ingestion, hybrid r
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [project.scripts]
 enterprise-rag = "enterprise_rag.cli:main"
 

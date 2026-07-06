@@ -13,6 +13,6 @@ COPY docs ./docs
 COPY tests ./tests
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -e .
+    && python -m pip install -e ".[dev]"
 
 CMD ["enterprise-rag", "--help"]
