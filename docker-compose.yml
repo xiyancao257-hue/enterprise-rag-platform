@@ -1,0 +1,7 @@
+services:
+  enterprise-rag:
+    build:
+      context: .
+    image: enterprise-rag:local
+    working_dir: /app
+    command: ["enterprise-rag", "--help"]

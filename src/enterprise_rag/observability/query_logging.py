@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +62,7 @@ def build_query_log_record(
     user_groups: set[str] | None = None,
 ) -> QueryLogRecord:
     return QueryLogRecord(
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         query=answer.query,
         normalized_query=trace.normalized_query,
         rewritten_queries=trace.rewritten_queries,
