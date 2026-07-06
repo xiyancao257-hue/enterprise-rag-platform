@@ -1,0 +1,11 @@
+{
+  "retrieval": {
+    "top_k": 5,
+    "enable_graph": false,
+    "graph_max_hops": 2,
+    "experiment_k_values": [1, 3, 5, 8]
+  },
+  "security": {
+    "default_user_groups": []
+  }
+}

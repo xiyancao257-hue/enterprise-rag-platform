@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-rag"
+version = "0.1.0"
+description = "Enterprise-style RAG pipeline with structured ingestion, hybrid retrieval, query rewriting, and self-healing hooks."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+enterprise-rag = "enterprise_rag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

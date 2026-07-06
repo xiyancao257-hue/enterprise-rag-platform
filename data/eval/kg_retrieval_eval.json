@@ -1,0 +1,9 @@
+[
+  {
+    "id": "auth_429_product_impact",
+    "query": "Which product is affected by AUTH-429?",
+    "expected_text_contains": [
+      "Product Atlas depends on Auth Service"
+    ]
+  }
+]

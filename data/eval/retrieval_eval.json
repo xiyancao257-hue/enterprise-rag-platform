@@ -1,0 +1,23 @@
+[
+  {
+    "id": "hybrid_retrieval",
+    "query": "What combines BM25 and vector search?",
+    "expected_text_contains": [
+      "Hybrid retrieval combines BM25 keyword search with vector search"
+    ]
+  },
+  {
+    "id": "dirty_data_cleaning",
+    "query": "What removes repeated headers and OCR noise?",
+    "expected_text_contains": [
+      "Dirty data filtering removes empty pages, repeated headers and footers"
+    ]
+  },
+  {
+    "id": "query_engine",
+    "query": "What can detect ambiguity and correct typos?",
+    "expected_text_contains": [
+      "A robust query engine can detect ambiguity"
+    ]
+  }
+]
