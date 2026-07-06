@@ -1,6 +1,6 @@
 from enterprise_rag.evaluation.experiments import (
-    RetrievalExperimentResult,
     RetrievalExperimentReport,
+    RetrievalExperimentResult,
     format_retrieval_experiment_report,
     run_top_k_experiments,
 )
@@ -51,8 +51,14 @@ def test_experiment_report_recommends_highest_recall_then_mrr_then_precision() -
 
 def test_run_top_k_experiments_runs_real_eval_for_each_k() -> None:
     chunks = [
-        Chunk(id="chunk_hybrid", document_id="doc1", text="Hybrid retrieval combines BM25 keyword search with vector search."),
-        Chunk(id="chunk_cleaning", document_id="doc1", text="Dirty data cleaning removes repeated headers and OCR noise."),
+        Chunk(
+            id="chunk_hybrid",
+            document_id="doc1",
+            text="Hybrid retrieval combines BM25 keyword search with vector search.",
+        ),
+        Chunk(
+            id="chunk_cleaning", document_id="doc1", text="Dirty data cleaning removes repeated headers and OCR noise."
+        ),
     ]
     cases = [
         RetrievalEvalCase(
@@ -87,7 +93,11 @@ def test_run_top_k_experiments_can_enable_graph_retrieval() -> None:
 
 def test_format_retrieval_experiment_report_lists_results_and_recommendation() -> None:
     chunks = [
-        Chunk(id="chunk_hybrid", document_id="doc1", text="Hybrid retrieval combines BM25 keyword search with vector search."),
+        Chunk(
+            id="chunk_hybrid",
+            document_id="doc1",
+            text="Hybrid retrieval combines BM25 keyword search with vector search.",
+        ),
     ]
     cases = [
         RetrievalEvalCase(id="hybrid", query="hybrid retrieval", expected_chunk_ids={"chunk_hybrid"}),

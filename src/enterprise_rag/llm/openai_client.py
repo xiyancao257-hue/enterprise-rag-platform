@@ -13,4 +13,3 @@ class OpenAIClient:
         raise OpenAIClientNotConfiguredError(
             "OpenAIClient is an adapter stub. Install and configure the OpenAI SDK before using it."
         )
-

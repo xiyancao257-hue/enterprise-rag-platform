@@ -35,4 +35,3 @@ def test_citation_formatter_handles_missing_source_and_heading() -> None:
     citation = CitationFormatter().format(hit)
 
     assert citation == "[2] unknown (chunk=chunk_2, score=0.2000, retriever=bm25)"
-

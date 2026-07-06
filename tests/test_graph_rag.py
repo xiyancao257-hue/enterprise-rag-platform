@@ -47,4 +47,3 @@ def test_graph_retriever_expands_query_entities_to_related_chunks() -> None:
     hit_ids = {hit.chunk.id for hit in hits}
     assert {"policy", "service", "product"} <= hit_ids
     assert all(hit.retriever == "graph" for hit in hits)
-

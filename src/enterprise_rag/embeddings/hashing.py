@@ -21,4 +21,3 @@ class HashingEmbeddingModel:
         if norm == 0:
             return vector
         return [value / norm for value in vector]
-

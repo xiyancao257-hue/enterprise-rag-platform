@@ -41,9 +41,7 @@ def test_query_plan_detects_ambiguous_references() -> None:
 
     assert plan.normalized_query == "how does it work"
     assert plan.rewritten_queries == ("how does it work",)
-    assert plan.ambiguity_notes == (
-        "Query contains references that may need conversation history or clarification.",
-    )
+    assert plan.ambiguity_notes == ("Query contains references that may need conversation history or clarification.",)
 
 
 def test_query_plan_flags_very_short_queries() -> None:
@@ -52,9 +50,7 @@ def test_query_plan_flags_very_short_queries() -> None:
     plan = engine.plan("retrieval")
 
     assert plan.normalized_query == "retrieval"
-    assert plan.ambiguity_notes == (
-        "Query is very short; expansion or clarification may improve recall.",
-    )
+    assert plan.ambiguity_notes == ("Query is very short; expansion or clarification may improve recall.",)
 
 
 def test_query_plan_extracts_metadata_filters_and_removes_them_from_query() -> None:

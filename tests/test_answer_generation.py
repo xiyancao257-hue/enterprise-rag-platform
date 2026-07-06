@@ -1,8 +1,8 @@
 from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.rag.answer_generation import (
+    INSUFFICIENT_EVIDENCE_MESSAGE,
     DeterministicAnswerGenerator,
     EvidenceSufficiencyPolicy,
-    INSUFFICIENT_EVIDENCE_MESSAGE,
     LLMAnswerGenerator,
 )
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass
-import re
 
 from enterprise_rag.graph.entity_extraction import RuleBasedEntityExtractor
 from enterprise_rag.models import Chunk
@@ -66,9 +66,26 @@ class KnowledgeGraph:
 
 class KnowledgeGraphBuilder:
     RELATION_PATTERNS = (
-        (re.compile(r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\s+depends on\s+(?P<target>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\b"), "depends_on"),
-        (re.compile(r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\s+uses\s+(?P<target>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\b"), "uses"),
-        (re.compile(r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\s+defines\s+(?P<target>[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)?)\b"), "defines"),
+        (
+            re.compile(
+                r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})"
+                r"\s+depends on\s+"
+                r"(?P<target>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\b"
+            ),
+            "depends_on",
+        ),
+        (
+            re.compile(
+                r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\s+uses\s+(?P<target>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\b"
+            ),
+            "uses",
+        ),
+        (
+            re.compile(
+                r"\b(?P<source>[A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*){0,4})\s+defines\s+(?P<target>[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)?)\b"
+            ),
+            "defines",
+        ),
     )
 
     def __init__(self, extractor: RuleBasedEntityExtractor | None = None) -> None:
@@ -103,4 +120,3 @@ class KnowledgeGraphBuilder:
                     )
                 )
         return relationships
-

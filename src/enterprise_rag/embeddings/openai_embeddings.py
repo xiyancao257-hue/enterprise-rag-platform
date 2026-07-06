@@ -13,4 +13,3 @@ class OpenAIEmbeddingModel:
         raise OpenAIEmbeddingNotConfiguredError(
             "OpenAIEmbeddingModel is an adapter stub. Install and configure the OpenAI SDK before using it."
         )
-

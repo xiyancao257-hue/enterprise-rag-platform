@@ -4,20 +4,20 @@ import argparse
 from pathlib import Path
 
 from enterprise_rag.config import load_config
-from enterprise_rag.evaluation.evidence_suggestion import approve_suggested_evidence, suggest_evidence_for_eval_draft
 from enterprise_rag.evaluation.eval_generation import (
     generate_eval_cases_from_logs,
     promote_reviewed_eval_draft,
     write_generated_eval_cases,
 )
+from enterprise_rag.evaluation.evidence_suggestion import approve_suggested_evidence, suggest_evidence_for_eval_draft
 from enterprise_rag.evaluation.experiments import format_retrieval_experiment_report, run_top_k_experiments
 from enterprise_rag.evaluation.index_inspection import format_index_quality_report, inspect_index
+from enterprise_rag.evaluation.readiness import build_readiness_report, format_readiness_report
 from enterprise_rag.evaluation.retrieval_eval import (
     format_retrieval_eval_report,
     load_retrieval_eval_cases,
     run_retrieval_eval,
 )
-from enterprise_rag.evaluation.readiness import build_readiness_report, format_readiness_report
 from enterprise_rag.evaluation.self_healing_workflow import (
     format_self_healing_workflow_report,
     run_self_healing_workflow,
@@ -149,9 +149,7 @@ def main() -> None:
         config = load_config(args.config)
         top_k = args.top_k if args.top_k is not None else config.retrieval.top_k
         enable_graph = args.enable_graph if args.enable_graph is not None else config.retrieval.enable_graph
-        graph_max_hops = (
-            args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
-        )
+        graph_max_hops = args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
         user_groups = args.user_group if args.user_group is not None else config.security.default_user_groups
         query(
             args.query,
@@ -167,17 +165,13 @@ def main() -> None:
         config = load_config(args.config)
         k = args.k if args.k is not None else config.retrieval.top_k
         enable_graph = args.enable_graph if args.enable_graph is not None else config.retrieval.enable_graph
-        graph_max_hops = (
-            args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
-        )
+        graph_max_hops = args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
         eval_retrieval(args.eval_path, args.index, k, enable_graph, graph_max_hops)
     elif args.command == "experiment":
         config = load_config(args.config)
         k_values = args.k_values if args.k_values is not None else list(config.retrieval.experiment_k_values)
         enable_graph = args.enable_graph if args.enable_graph is not None else config.retrieval.enable_graph
-        graph_max_hops = (
-            args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
-        )
+        graph_max_hops = args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
         experiment_retrieval(args.eval_path, args.index, k_values, enable_graph, graph_max_hops)
     elif args.command == "inspect-index":
         inspect_local_index(args.index)

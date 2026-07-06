@@ -31,4 +31,3 @@ class JsonChunkStore:
             )
             for item in payload
         ]
-

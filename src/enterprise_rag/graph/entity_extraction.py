@@ -15,4 +15,3 @@ class RuleBasedEntityExtractor:
 
     def normalize(self, entity: str) -> str:
         return " ".join(entity.lower().split())
-

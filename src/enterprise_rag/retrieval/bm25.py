@@ -20,7 +20,7 @@ class BM25Retriever:
     def search(self, query: str, top_k: int = 10) -> list[SearchHit]:
         query_terms = tokenize(query)
         scored: list[tuple[float, Chunk]] = []
-        for chunk, terms, freqs in zip(self.chunks, self.doc_tokens, self.term_freqs):
+        for chunk, terms, freqs in zip(self.chunks, self.doc_tokens, self.term_freqs, strict=True):
             score = 0.0
             doc_len = len(terms)
             for term in query_terms:
@@ -33,5 +33,7 @@ class BM25Retriever:
             if score > 0:
                 scored.append((score, chunk))
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [SearchHit(chunk=chunk, score=score, retriever="bm25", rank=i + 1) for i, (score, chunk) in enumerate(scored[:top_k])]
-
+        return [
+            SearchHit(chunk=chunk, score=score, retriever="bm25", rank=i + 1)
+            for i, (score, chunk) in enumerate(scored[:top_k])
+        ]

@@ -34,4 +34,3 @@ class HashingVectorRetriever:
             for result in results
             if result.id in self.chunks_by_id
         ]
-

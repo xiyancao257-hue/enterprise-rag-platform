@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from difflib import get_close_matches
 import re
+from difflib import get_close_matches
 
 from enterprise_rag.models import QueryPlan
 from enterprise_rag.text import tokenize

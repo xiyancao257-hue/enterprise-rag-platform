@@ -50,4 +50,3 @@ def format_index_quality_report(report: IndexQualityReport) -> str:
             f"metadata_keys: {', '.join(report.metadata_keys) if report.metadata_keys else 'none'}",
         ]
     )
-

@@ -15,4 +15,3 @@ class ExternalReranker:
         raise ExternalRerankerNotConfiguredError(
             "ExternalReranker is an adapter stub. Configure a reranking provider before using it."
         )
-

@@ -29,4 +29,3 @@ def jaccard(left: Iterable[str], right: Iterable[str]) -> float:
     if not left_set and not right_set:
         return 0.0
     return len(left_set & right_set) / len(left_set | right_set)
-

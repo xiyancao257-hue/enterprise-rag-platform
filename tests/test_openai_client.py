@@ -21,4 +21,3 @@ def test_openai_client_matches_llm_answer_generator_client_interface() -> None:
     generator = LLMAnswerGenerator(OpenAIClient())
 
     assert generator.client.model == "gpt-4.1-mini"
-

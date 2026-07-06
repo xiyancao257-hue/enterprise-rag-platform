@@ -33,4 +33,3 @@ class DirtyDataCleaner:
         counts = Counter(line for line in lines if line)
         cleaned = [line for line in lines if not line or counts[line] <= 3]
         return normalize_text("\n".join(cleaned))
-

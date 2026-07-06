@@ -22,4 +22,3 @@ def test_in_memory_vector_index_replaces_existing_vector() -> None:
 
     assert results[0].id == "chunk"
     assert results[0].score == 1.0
-

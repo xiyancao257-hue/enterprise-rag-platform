@@ -32,4 +32,3 @@ def test_external_reranker_stub_raises_clear_error() -> None:
     assert reranker.provider == "example"
     with pytest.raises(ExternalRerankerNotConfiguredError, match="adapter stub"):
         reranker.rerank("query", [])
-

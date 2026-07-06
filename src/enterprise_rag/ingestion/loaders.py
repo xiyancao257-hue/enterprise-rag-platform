@@ -31,4 +31,3 @@ def load_documents(path: Path) -> list[Document]:
             )
         )
     return documents
-

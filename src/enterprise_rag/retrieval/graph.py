@@ -32,4 +32,3 @@ class GraphRetriever:
             )
             for rank, chunk in enumerate(chunks[:top_k], start=1)
         ]
-

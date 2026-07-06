@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from enterprise_rag.evaluation.retrieval_eval import RetrievalCaseResult, RetrievalEvalReport
@@ -54,7 +54,9 @@ class RetrievalDiagnostics:
                     case_id=result.case_id,
                     category="retrieval_recall",
                     message="Expected evidence exists in the index but was not retrieved in the top-k results.",
-                    suggestion="Review query rewriting, BM25/vector retrieval, fusion, metadata filters, or increase k.",
+                    suggestion=(
+                        "Review query rewriting, BM25/vector retrieval, fusion, metadata filters, or increase k."
+                    ),
                 )
             )
         elif result.reciprocal_rank < 1:

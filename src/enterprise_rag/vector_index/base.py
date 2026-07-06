@@ -17,4 +17,3 @@ class VectorIndex(Protocol):
 
     def search(self, query_vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
         """Search for nearest vectors."""
-

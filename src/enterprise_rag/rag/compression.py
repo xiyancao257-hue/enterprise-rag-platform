@@ -41,4 +41,3 @@ class ContextCompressor:
         if tail:
             parts.append(tail)
         return parts or [normalized]
-

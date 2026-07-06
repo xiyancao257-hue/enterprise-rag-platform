@@ -138,8 +138,14 @@ def test_load_retrieval_eval_cases_warns_when_expected_text_does_not_match(tmp_p
 
 def test_run_retrieval_eval_uses_real_query_engine_and_hybrid_retriever() -> None:
     chunks = [
-        Chunk(id="chunk_hybrid", document_id="doc1", text="Hybrid retrieval combines BM25 keyword search with vector search."),
-        Chunk(id="chunk_cleaning", document_id="doc1", text="Dirty data cleaning removes repeated headers and OCR noise."),
+        Chunk(
+            id="chunk_hybrid",
+            document_id="doc1",
+            text="Hybrid retrieval combines BM25 keyword search with vector search.",
+        ),
+        Chunk(
+            id="chunk_cleaning", document_id="doc1", text="Dirty data cleaning removes repeated headers and OCR noise."
+        ),
     ]
     cases = [
         RetrievalEvalCase(

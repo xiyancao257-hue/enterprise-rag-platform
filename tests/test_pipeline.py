@@ -1,8 +1,8 @@
+from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.rag.pipeline import RagPipeline
-from enterprise_rag.models import Chunk, Document
 
 
 def test_pipeline_retrieves_hybrid_context() -> None:

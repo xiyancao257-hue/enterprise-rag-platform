@@ -27,4 +27,3 @@ def test_openai_embedding_model_stub_raises_clear_error() -> None:
     assert model.model == "example-embedding-model"
     with pytest.raises(OpenAIEmbeddingNotConfiguredError, match="adapter stub"):
         model.embed("hello")
-

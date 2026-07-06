@@ -95,4 +95,3 @@ def test_format_diagnostics_handles_empty_and_non_empty_findings() -> None:
     assert "Diagnostics:" in formatted
     assert "- missed [retrieval_recall]" in formatted
     assert "suggestion:" in formatted
-

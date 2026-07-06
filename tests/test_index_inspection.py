@@ -45,4 +45,3 @@ def test_format_index_quality_report_is_readable() -> None:
     assert "Index Quality Report" in formatted
     assert "chunks: 1" in formatted
     assert "metadata_keys: extension, source_path" in formatted
-

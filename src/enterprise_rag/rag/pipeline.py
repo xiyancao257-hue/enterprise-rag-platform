@@ -6,10 +6,10 @@ from enterprise_rag.observability.tracing import QueryTrace, trace_hits
 from enterprise_rag.query.engine import QueryEngine
 from enterprise_rag.rag.answer_generation import AnswerGenerator, DeterministicAnswerGenerator
 from enterprise_rag.rag.compression import ContextCompressor
+from enterprise_rag.reranking.base import Reranker
 from enterprise_rag.retrieval.graph import GraphRetriever
 from enterprise_rag.retrieval.hybrid import HybridRetriever
 from enterprise_rag.retrieval.rerank import LightweightReranker
-from enterprise_rag.reranking.base import Reranker
 from enterprise_rag.text import tokenize
 
 

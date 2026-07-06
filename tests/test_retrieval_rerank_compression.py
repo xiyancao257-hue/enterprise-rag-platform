@@ -1,6 +1,6 @@
-from enterprise_rag.models import Chunk, SearchHit
-from enterprise_rag.graph.knowledge_graph import KnowledgeGraphBuilder
 from enterprise_rag.embeddings.hashing import HashingEmbeddingModel
+from enterprise_rag.graph.knowledge_graph import KnowledgeGraphBuilder
+from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.rag.compression import ContextCompressor
 from enterprise_rag.retrieval.bm25 import BM25Retriever
 from enterprise_rag.retrieval.filters import MetadataFilter
@@ -27,12 +27,15 @@ def test_metadata_filter_matches_chunks_and_hits() -> None:
     metadata_filter = MetadataFilter({"department": "security"})
 
     assert metadata_filter.apply_chunks([public_chunk, private_chunk]) == [public_chunk]
-    assert metadata_filter.apply_hits(
-        [
-            SearchHit(chunk=public_chunk, score=1.0, retriever="test", rank=1),
-            SearchHit(chunk=private_chunk, score=0.5, retriever="test", rank=2),
-        ]
-    )[0].chunk.id == "public"
+    assert (
+        metadata_filter.apply_hits(
+            [
+                SearchHit(chunk=public_chunk, score=1.0, retriever="test", rank=1),
+                SearchHit(chunk=private_chunk, score=0.5, retriever="test", rank=2),
+            ]
+        )[0].chunk.id
+        == "public"
+    )
 
 
 def test_metadata_filter_enforces_allowed_groups_acl() -> None:
@@ -88,7 +91,9 @@ def test_vector_retriever_accepts_embedding_model_interface() -> None:
         make_chunk("rag", "Hybrid retrieval combines BM25 keyword search with vector search."),
     ]
 
-    hits = HashingVectorRetriever(chunks, embedding_model=HashingEmbeddingModel(dimensions=32)).search("hybrid retrieval")
+    hits = HashingVectorRetriever(chunks, embedding_model=HashingEmbeddingModel(dimensions=32)).search(
+        "hybrid retrieval"
+    )
 
     assert hits[0].chunk.id == "rag"
 
@@ -137,8 +142,18 @@ def test_hybrid_retriever_can_include_graph_hits() -> None:
 
 def test_hybrid_retriever_applies_metadata_filters() -> None:
     chunks = [
-        Chunk(id="security", document_id="doc1", text="Retention policy for security logs.", metadata={"department": "security"}),
-        Chunk(id="finance", document_id="doc1", text="Retention policy for finance records.", metadata={"department": "finance"}),
+        Chunk(
+            id="security",
+            document_id="doc1",
+            text="Retention policy for security logs.",
+            metadata={"department": "security"},
+        ),
+        Chunk(
+            id="finance",
+            document_id="doc1",
+            text="Retention policy for finance records.",
+            metadata={"department": "finance"},
+        ),
     ]
 
     hits = HybridRetriever(chunks).search(["retention policy"], top_k=5, metadata_filters={"department": "security"})
@@ -149,8 +164,18 @@ def test_hybrid_retriever_applies_metadata_filters() -> None:
 
 def test_hybrid_retriever_applies_acl_filters() -> None:
     chunks = [
-        Chunk(id="security", document_id="doc1", text="Retention policy for security logs.", metadata={"allowed_groups": "security"}),
-        Chunk(id="finance", document_id="doc1", text="Retention policy for finance records.", metadata={"allowed_groups": "finance"}),
+        Chunk(
+            id="security",
+            document_id="doc1",
+            text="Retention policy for security logs.",
+            metadata={"allowed_groups": "security"},
+        ),
+        Chunk(
+            id="finance",
+            document_id="doc1",
+            text="Retention policy for finance records.",
+            metadata={"allowed_groups": "finance"},
+        ),
     ]
 
     hits = HybridRetriever(chunks).search(["retention policy"], top_k=5, user_groups={"security"})
