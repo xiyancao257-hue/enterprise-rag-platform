@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+import logging
+import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from enterprise_rag.config import AppConfig, load_config
@@ -13,6 +18,8 @@ from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
+REQUEST_ID_HEADER = "X-Request-ID"
+logger = logging.getLogger("enterprise_rag.api")
 
 
 class QueryRequest(BaseModel):
@@ -63,6 +70,7 @@ class QueryTraceResponse(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    request_id: str
     answer: str
     query_plan: QueryPlanResponse
     citations: list[CitationResponse]
@@ -70,6 +78,7 @@ class QueryResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    request_id: str
     status: str
     chunk_count: int
     vector_index_provider: str
@@ -81,23 +90,49 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
     app.state.index_path = index_path
     app.state.config = config
 
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        request_id = request.headers.get(REQUEST_ID_HEADER) or f"req_{uuid4().hex}"
+        request.state.request_id = request_id
+        started_at = time.perf_counter()
+        response = await call_next(request)
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        response.headers[REQUEST_ID_HEADER] = request_id
+        _log_event(
+            "http_request_completed",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            latency_ms=round(latency_ms, 2),
+        )
+        return response
+
     @app.get("/health", response_model=HealthResponse)
-    def health() -> HealthResponse:
+    def health(request: Request) -> HealthResponse:
         chunks = JsonChunkStore(app.state.index_path).load()
         return HealthResponse(
+            request_id=request.state.request_id,
             status="ok",
             chunk_count=len(chunks),
             vector_index_provider=app.state.config.vector_index.provider,
         )
 
     @app.post("/query", response_model=QueryResponse)
-    def query(request: QueryRequest) -> QueryResponse:
+    def query(payload: QueryRequest, request: Request) -> QueryResponse:
+        started_at = time.perf_counter()
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
+            _log_event(
+                "query_failed",
+                request_id=request.state.request_id,
+                reason="empty_index",
+                latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            )
             raise HTTPException(status_code=404, detail="No chunks found. Run ingestion before querying.")
 
         config: AppConfig = app.state.config
-        top_k = request.top_k if request.top_k is not None else config.retrieval.top_k
+        top_k = payload.top_k if payload.top_k is not None else config.retrieval.top_k
         pipeline = RagPipeline(
             chunks,
             enable_graph=config.retrieval.enable_graph,
@@ -105,11 +140,21 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
             vector_index=create_vector_index(config.vector_index),
         )
         answer, trace = pipeline.answer_for_user_with_trace(
-            request.query,
+            payload.query,
             top_k=top_k,
-            user_groups=set(request.user_groups) or set(config.security.default_user_groups),
+            user_groups=set(payload.user_groups) or set(config.security.default_user_groups),
         )
-        return _query_response(answer, trace if request.include_trace else None)
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        _log_event(
+            "query_completed",
+            request_id=request.state.request_id,
+            latency_ms=round(latency_ms, 2),
+            top_k=top_k,
+            citation_count=len(answer.citations),
+            include_trace=payload.include_trace,
+            vector_index_provider=config.vector_index.provider,
+        )
+        return _query_response(request.state.request_id, answer, trace if payload.include_trace else None)
 
     return app
 
@@ -117,8 +162,9 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
 app = create_app()
 
 
-def _query_response(answer: RagAnswer, trace: QueryTrace | None) -> QueryResponse:
+def _query_response(request_id: str, answer: RagAnswer, trace: QueryTrace | None) -> QueryResponse:
     return QueryResponse(
+        request_id=request_id,
         answer=answer.answer,
         query_plan=QueryPlanResponse(
             original_query=answer.query_plan.original_query,
@@ -168,6 +214,10 @@ def _trace_hit_response(hit: TraceHit) -> TraceHitResponse:
         heading_path=list(hit.heading_path),
         source_path=hit.source_path,
     )
+
+
+def _log_event(event: str, **fields: object) -> None:
+    logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
 
 def main() -> None:
