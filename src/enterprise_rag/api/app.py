@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from enterprise_rag.config import AppConfig, load_config
@@ -20,6 +21,40 @@ from enterprise_rag.vector_index.factory import create_vector_index
 DEFAULT_INDEX = Path("data/processed/chunks.json")
 REQUEST_ID_HEADER = "X-Request-ID"
 logger = logging.getLogger("enterprise_rag.api")
+
+
+class MetricsCollector:
+    def __init__(self) -> None:
+        self.http_requests_total = 0
+        self.query_requests_total = 0
+        self.query_failures_total = 0
+        self.query_latency_ms_sum = 0.0
+        self.query_latency_ms_count = 0
+        self.query_citations_total = 0
+
+    def record_http_request(self) -> None:
+        self.http_requests_total += 1
+
+    def record_query_success(self, latency_ms: float, citation_count: int) -> None:
+        self.query_requests_total += 1
+        self.query_latency_ms_sum += latency_ms
+        self.query_latency_ms_count += 1
+        self.query_citations_total += citation_count
+
+    def record_query_failure(self) -> None:
+        self.query_requests_total += 1
+        self.query_failures_total += 1
+
+    def render_prometheus(self) -> str:
+        metrics = {
+            "enterprise_rag_http_requests_total": self.http_requests_total,
+            "enterprise_rag_query_requests_total": self.query_requests_total,
+            "enterprise_rag_query_failures_total": self.query_failures_total,
+            "enterprise_rag_query_latency_ms_sum": round(self.query_latency_ms_sum, 4),
+            "enterprise_rag_query_latency_ms_count": self.query_latency_ms_count,
+            "enterprise_rag_query_citations_total": self.query_citations_total,
+        }
+        return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
 
 
 class QueryRequest(BaseModel):
@@ -89,6 +124,7 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
     app.state.index_path = index_path
     app.state.config = config
+    app.state.metrics = MetricsCollector()
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -97,6 +133,7 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
         started_at = time.perf_counter()
         response = await call_next(request)
         latency_ms = (time.perf_counter() - started_at) * 1000
+        app.state.metrics.record_http_request()
         response.headers[REQUEST_ID_HEADER] = request_id
         _log_event(
             "http_request_completed",
@@ -107,6 +144,10 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
             latency_ms=round(latency_ms, 2),
         )
         return response
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> str:
+        return app.state.metrics.render_prometheus()
 
     @app.get("/health", response_model=HealthResponse)
     def health(request: Request) -> HealthResponse:
@@ -123,6 +164,7 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
         started_at = time.perf_counter()
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
+            app.state.metrics.record_query_failure()
             _log_event(
                 "query_failed",
                 request_id=request.state.request_id,
@@ -145,6 +187,7 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
             user_groups=set(payload.user_groups) or set(config.security.default_user_groups),
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
+        app.state.metrics.record_query_success(latency_ms=latency_ms, citation_count=len(answer.citations))
         _log_event(
             "query_completed",
             request_id=request.state.request_id,

@@ -89,3 +89,41 @@ def test_query_returns_404_when_index_is_empty(tmp_path) -> None:
     assert response.status_code == 404
     assert response.headers[REQUEST_ID_HEADER].startswith("req_")
     assert response.json()["detail"] == "No chunks found. Run ingestion before querying."
+
+
+def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    initial_metrics = client.get("/metrics").text
+    assert "enterprise_rag_http_requests_total 0" in initial_metrics
+    assert "enterprise_rag_query_requests_total 0" in initial_metrics
+
+    client.get("/health")
+    client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    metrics = client.get("/metrics").text
+    assert "enterprise_rag_http_requests_total 3" in metrics
+    assert "enterprise_rag_query_requests_total 1" in metrics
+    assert "enterprise_rag_query_failures_total 0" in metrics
+    assert "enterprise_rag_query_latency_ms_count 1" in metrics
+    assert "enterprise_rag_query_citations_total 1" in metrics
+
+
+def test_metrics_records_failed_query(tmp_path) -> None:
+    client = TestClient(create_app(index_path=tmp_path / "missing.json"))
+
+    client.post("/query", json={"query": "hybrid retrieval"})
+
+    metrics = client.get("/metrics").text
+    assert "enterprise_rag_query_requests_total 1" in metrics
+    assert "enterprise_rag_query_failures_total 1" in metrics
