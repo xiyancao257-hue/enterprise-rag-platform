@@ -6,6 +6,15 @@ services:
     working_dir: /app
     command: ["enterprise-rag", "--help"]
 
+  api:
+    build:
+      context: .
+    image: enterprise-rag:local
+    working_dir: /app
+    command: ["enterprise-rag-api"]
+    ports:
+      - "8000:8000"
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:

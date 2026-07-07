@@ -15,9 +15,7 @@ It starts small, but the architecture is shaped around real enterprise RAG probl
 
 ```bash
 cd enterprise-rag
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv sync --extra dev
 enterprise-rag ingest data/raw
 enterprise-rag query "What does AUTH-429 affect?" --enable-graph --trace
 ```
@@ -42,6 +40,36 @@ enterprise-rag experiment data/eval/retrieval_eval.json --k-values 1 3 5 8
 
 enterprise-rag inspect-index
 ```
+
+## API Service
+
+The project also exposes the same RAG pipeline through FastAPI.
+
+```bash
+enterprise-rag-api
+```
+
+Or with Docker Compose:
+
+```bash
+docker compose up api
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Query:
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What does AUTH-429 affect?","top_k":3,"include_trace":true}'
+```
+
+The API returns the grounded answer, query plan, citations, and optional retrieval trace.
 
 ## Configuration
 

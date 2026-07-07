@@ -7,10 +7,14 @@ name = "enterprise-rag"
 version = "0.1.0"
 description = "Enterprise-style RAG pipeline with structured ingestion, hybrid retrieval, query rewriting, and self-healing hooks."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
 
 [project.optional-dependencies]
 dev = [
+    "httpx2>=0.1",
     "pytest>=8",
     "ruff>=0.8",
 ]
@@ -18,6 +22,7 @@ qdrant = ["qdrant-client>=1.12"]
 
 [project.scripts]
 enterprise-rag = "enterprise_rag.cli:main"
+enterprise-rag-api = "enterprise_rag.api.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
