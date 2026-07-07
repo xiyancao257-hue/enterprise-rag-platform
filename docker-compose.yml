@@ -5,3 +5,13 @@ services:
     image: enterprise-rag:local
     working_dir: /app
     command: ["enterprise-rag", "--help"]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  qdrant_data:
