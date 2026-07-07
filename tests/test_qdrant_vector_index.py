@@ -18,9 +18,18 @@ class FakeQueryResponse:
 
 class FakeQdrantClient:
     def __init__(self) -> None:
+        self.collections: set[str] = set()
+        self.created_collections = []
         self.upserts = []
         self.query_calls = []
         self.response = FakeQueryResponse(points=[FakePoint(id="chunk1", score=0.9)])
+
+    def collection_exists(self, collection_name: str) -> bool:
+        return collection_name in self.collections
+
+    def create_collection(self, collection_name: str, vectors_config: object) -> None:
+        self.collections.add(collection_name)
+        self.created_collections.append((collection_name, vectors_config))
 
     def upsert(self, collection_name: str, points: list[object]) -> None:
         self.upserts.append((collection_name, points))
@@ -32,6 +41,7 @@ class FakeQdrantClient:
 
 def test_qdrant_vector_index_adds_points() -> None:
     client = FakeQdrantClient()
+    client.collections.add("chunks")
     index = QdrantVectorIndex(
         collection_name="chunks",
         client=client,
@@ -42,6 +52,22 @@ def test_qdrant_vector_index_adds_points() -> None:
 
     assert client.upserts[0][0] == "chunks"
     assert client.upserts[0][1] == [{"id": "chunk1", "vector": [1.0, 0.0]}]
+
+
+def test_qdrant_vector_index_creates_missing_collection_from_vector_size() -> None:
+    client = FakeQdrantClient()
+    index = QdrantVectorIndex(
+        collection_name="chunks",
+        client=client,
+        point_factory=lambda id, vector: {"id": id, "vector": vector},
+        vector_params_factory=lambda vector_size: {"size": vector_size, "distance": "cosine"},
+    )
+
+    index.add("chunk1", [1.0, 0.0, 0.5])
+    index.add("chunk2", [0.0, 1.0, 0.5])
+
+    assert client.created_collections == [("chunks", {"size": 3, "distance": "cosine"})]
+    assert [call[0] for call in client.upserts] == ["chunks", "chunks"]
 
 
 def test_qdrant_vector_index_search_maps_results() -> None:
