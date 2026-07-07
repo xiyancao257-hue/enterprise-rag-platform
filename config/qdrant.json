@@ -9,8 +9,8 @@
     "default_user_groups": []
   },
   "vector_index": {
-    "provider": "memory",
+    "provider": "qdrant",
     "collection_name": "enterprise_rag_chunks",
-    "url": "http://localhost:6333"
+    "url": "http://qdrant:6333"
   }
 }

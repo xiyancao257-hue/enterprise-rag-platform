@@ -9,6 +9,7 @@ def test_load_config_without_path_uses_defaults() -> None:
     assert config.retrieval.enable_graph is False
     assert config.retrieval.graph_max_hops == 2
     assert config.security.default_user_groups == ()
+    assert config.vector_index.provider == "memory"
 
 
 def test_parse_config_loads_retrieval_and_security_settings() -> None:
@@ -23,6 +24,11 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
             "security": {
                 "default_user_groups": ["engineering", "support"],
             },
+            "vector_index": {
+                "provider": "qdrant",
+                "collection_name": "chunks",
+                "url": "http://qdrant:6333",
+            },
         }
     )
 
@@ -31,6 +37,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.retrieval.graph_max_hops == 3
     assert config.retrieval.experiment_k_values == (2, 4, 6)
     assert config.security.default_user_groups == ("engineering", "support")
+    assert config.vector_index.provider == "qdrant"
+    assert config.vector_index.collection_name == "chunks"
+    assert config.vector_index.url == "http://qdrant:6333"
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

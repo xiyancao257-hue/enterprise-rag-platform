@@ -20,9 +20,17 @@ class SecurityConfig:
 
 
 @dataclass(frozen=True)
+class VectorIndexConfig:
+    provider: str = "memory"
+    collection_name: str = "enterprise_rag_chunks"
+    url: str = "http://localhost:6333"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -39,6 +47,7 @@ def load_config(path: Path | None = None) -> AppConfig:
 def parse_config(data: dict[str, Any]) -> AppConfig:
     retrieval_data = _section(data, "retrieval")
     security_data = _section(data, "security")
+    vector_index_data = _section(data, "vector_index")
 
     return AppConfig(
         retrieval=RetrievalConfig(
@@ -55,6 +64,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         ),
         security=SecurityConfig(
             default_user_groups=tuple(str(group) for group in security_data.get("default_user_groups", ())),
+        ),
+        vector_index=VectorIndexConfig(
+            provider=str(vector_index_data.get("provider", VectorIndexConfig.provider)),
+            collection_name=str(vector_index_data.get("collection_name", VectorIndexConfig.collection_name)),
+            url=str(vector_index_data.get("url", VectorIndexConfig.url)),
         ),
     )
 
