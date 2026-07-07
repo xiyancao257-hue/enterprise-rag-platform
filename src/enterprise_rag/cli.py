@@ -32,6 +32,8 @@ from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.rag.citations import CitationFormatter
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.storage.json_store import JsonChunkStore
+from enterprise_rag.vector_index.base import VectorIndex
+from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
 
@@ -160,6 +162,7 @@ def main() -> None:
             set(user_groups),
             args.trace,
             args.log_query,
+            create_vector_index(config.vector_index),
         )
     elif args.command == "eval":
         config = load_config(args.config)
@@ -218,12 +221,13 @@ def query(
     user_groups: set[str] | None = None,
     show_trace: bool = False,
     log_query_path: Path | None = None,
+    vector_index: VectorIndex | None = None,
 ) -> None:
     chunks = JsonChunkStore(index_path).load()
     if not chunks:
         raise SystemExit(f"No chunks found at {index_path}. Run `enterprise-rag ingest data/raw` first.")
 
-    pipeline = RagPipeline(chunks, enable_graph=enable_graph, graph_max_hops=graph_max_hops)
+    pipeline = RagPipeline(chunks, enable_graph=enable_graph, graph_max_hops=graph_max_hops, vector_index=vector_index)
     answer, trace = pipeline.answer_for_user_with_trace(
         query_text,
         top_k=top_k,

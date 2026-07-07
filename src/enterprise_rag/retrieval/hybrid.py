@@ -7,6 +7,7 @@ from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.retrieval.bm25 import BM25Retriever
 from enterprise_rag.retrieval.filters import MetadataFilter
 from enterprise_rag.retrieval.vector import HashingVectorRetriever
+from enterprise_rag.vector_index.base import VectorIndex
 
 
 class SingleQueryRetriever(Protocol):
@@ -15,10 +16,15 @@ class SingleQueryRetriever(Protocol):
 
 
 class HybridRetriever:
-    def __init__(self, chunks: list[Chunk], extra_retrievers: list[SingleQueryRetriever] | None = None) -> None:
+    def __init__(
+        self,
+        chunks: list[Chunk],
+        extra_retrievers: list[SingleQueryRetriever] | None = None,
+        vector_index: VectorIndex | None = None,
+    ) -> None:
         self.chunks = chunks
         self.bm25 = BM25Retriever(chunks)
-        self.vector = HashingVectorRetriever(chunks)
+        self.vector = HashingVectorRetriever(chunks, vector_index=vector_index)
         self.extra_retrievers = extra_retrievers or []
 
     def search(

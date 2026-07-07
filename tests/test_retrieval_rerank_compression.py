@@ -8,6 +8,7 @@ from enterprise_rag.retrieval.graph import GraphRetriever
 from enterprise_rag.retrieval.hybrid import HybridRetriever
 from enterprise_rag.retrieval.rerank import LightweightReranker
 from enterprise_rag.retrieval.vector import HashingVectorRetriever
+from enterprise_rag.vector_index.base import VectorSearchResult
 from enterprise_rag.vector_index.in_memory import InMemoryVectorIndex
 
 
@@ -120,6 +121,32 @@ def test_hybrid_retriever_fuses_bm25_and_vector_hits() -> None:
     assert hits[0].chunk.id == "rag"
     assert "bm25" in hits[0].retriever
     assert "vector" in hits[0].retriever
+
+
+def test_hybrid_retriever_uses_injected_vector_index() -> None:
+    class TrackingVectorIndex:
+        def __init__(self) -> None:
+            self.added_ids: list[str] = []
+            self.search_top_k: int | None = None
+
+        def add(self, id: str, vector: list[float]) -> None:
+            self.added_ids.append(id)
+
+        def search(self, query_vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
+            self.search_top_k = top_k
+            return [VectorSearchResult(id="rag", score=1.0, rank=1)]
+
+    chunks = [
+        make_chunk("rag", "Hybrid retrieval combines BM25 keyword search with vector search."),
+        make_chunk("cleaning", "Dirty data cleaning removes repeated headers and OCR noise."),
+    ]
+    vector_index = TrackingVectorIndex()
+
+    hits = HybridRetriever(chunks, vector_index=vector_index).search(["hybrid retrieval"], top_k=1)
+
+    assert vector_index.added_ids == ["rag", "cleaning"]
+    assert vector_index.search_top_k == 2
+    assert hits[0].chunk.id == "rag"
 
 
 def test_hybrid_retriever_can_include_graph_hits() -> None:

@@ -11,6 +11,7 @@ from enterprise_rag.retrieval.graph import GraphRetriever
 from enterprise_rag.retrieval.hybrid import HybridRetriever
 from enterprise_rag.retrieval.rerank import LightweightReranker
 from enterprise_rag.text import tokenize
+from enterprise_rag.vector_index.base import VectorIndex
 
 
 class RagPipeline:
@@ -21,6 +22,7 @@ class RagPipeline:
         reranker: Reranker | None = None,
         enable_graph: bool = False,
         graph_max_hops: int = 2,
+        vector_index: VectorIndex | None = None,
     ) -> None:
         vocabulary = {token for chunk in chunks for token in tokenize(chunk.text)}
         extra_retrievers = []
@@ -28,7 +30,7 @@ class RagPipeline:
             graph = KnowledgeGraphBuilder().build(chunks)
             extra_retrievers.append(GraphRetriever(graph, max_hops=graph_max_hops))
         self.query_engine = QueryEngine(vocabulary=vocabulary)
-        self.retriever = HybridRetriever(chunks, extra_retrievers=extra_retrievers)
+        self.retriever = HybridRetriever(chunks, extra_retrievers=extra_retrievers, vector_index=vector_index)
         self.reranker = reranker or LightweightReranker()
         self.compressor = ContextCompressor()
         self.answer_generator = answer_generator or DeterministicAnswerGenerator()
