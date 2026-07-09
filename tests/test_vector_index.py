@@ -22,3 +22,13 @@ def test_in_memory_vector_index_replaces_existing_vector() -> None:
 
     assert results[0].id == "chunk"
     assert results[0].score == 1.0
+
+
+def test_in_memory_vector_index_applies_metadata_filters_before_search() -> None:
+    index = InMemoryVectorIndex()
+    index.add("acme", [1.0, 0.0], metadata={"tenant_id": "acme"})
+    index.add("globex", [1.0, 0.0], metadata={"tenant_id": "globex"})
+
+    results = index.search([1.0, 0.0], top_k=5, metadata_filters={"tenant_id": "acme"})
+
+    assert [result.id for result in results] == ["acme"]

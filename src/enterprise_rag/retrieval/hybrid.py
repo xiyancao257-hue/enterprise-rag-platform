@@ -38,7 +38,11 @@ class HybridRetriever:
         candidate_lists: list[list[SearchHit]] = []
         for query in queries:
             candidate_lists.append(metadata_filter.apply_hits(self.bm25.search(query, top_k=top_k * 2)))
-            candidate_lists.append(metadata_filter.apply_hits(self.vector.search(query, top_k=top_k * 2)))
+            candidate_lists.append(
+                metadata_filter.apply_hits(
+                    self.vector.search(query, top_k=top_k * 2, metadata_filters=metadata_filters)
+                )
+            )
             for retriever in self.extra_retrievers:
                 candidate_lists.append(metadata_filter.apply_hits(retriever.search(query, top_k=top_k * 2)))
         return self._rrf(candidate_lists, top_k=top_k)

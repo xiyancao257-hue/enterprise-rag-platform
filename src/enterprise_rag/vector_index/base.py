@@ -12,8 +12,13 @@ class VectorSearchResult:
 
 
 class VectorIndex(Protocol):
-    def add(self, id: str, vector: list[float]) -> None:
+    def add(self, id: str, vector: list[float], metadata: dict[str, str] | None = None) -> None:
         """Add or replace a vector by id."""
 
-    def search(self, query_vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
+    def search(
+        self,
+        query_vector: list[float],
+        top_k: int = 10,
+        metadata_filters: dict[str, str] | None = None,
+    ) -> list[VectorSearchResult]:
         """Search for nearest vectors."""

@@ -34,8 +34,14 @@ class FakeQdrantClient:
     def upsert(self, collection_name: str, points: list[object]) -> None:
         self.upserts.append((collection_name, points))
 
-    def query_points(self, collection_name: str, query: list[float], limit: int) -> FakeQueryResponse:
-        self.query_calls.append((collection_name, query, limit))
+    def query_points(
+        self,
+        collection_name: str,
+        query: list[float],
+        limit: int,
+        query_filter: object | None = None,
+    ) -> FakeQueryResponse:
+        self.query_calls.append((collection_name, query, limit, query_filter))
         return self.response
 
 
@@ -45,13 +51,13 @@ def test_qdrant_vector_index_adds_points() -> None:
     index = QdrantVectorIndex(
         collection_name="chunks",
         client=client,
-        point_factory=lambda id, vector: {"id": id, "vector": vector},
+        point_factory=lambda id, vector, metadata: {"id": id, "vector": vector, "payload": metadata},
     )
 
-    index.add("chunk1", [1.0, 0.0])
+    index.add("chunk1", [1.0, 0.0], metadata={"tenant_id": "acme"})
 
     assert client.upserts[0][0] == "chunks"
-    assert client.upserts[0][1] == [{"id": "chunk1", "vector": [1.0, 0.0]}]
+    assert client.upserts[0][1] == [{"id": "chunk1", "vector": [1.0, 0.0], "payload": {"tenant_id": "acme"}}]
 
 
 def test_qdrant_vector_index_creates_missing_collection_from_vector_size() -> None:
@@ -59,7 +65,7 @@ def test_qdrant_vector_index_creates_missing_collection_from_vector_size() -> No
     index = QdrantVectorIndex(
         collection_name="chunks",
         client=client,
-        point_factory=lambda id, vector: {"id": id, "vector": vector},
+        point_factory=lambda id, vector, metadata: {"id": id, "vector": vector, "payload": metadata},
         vector_params_factory=lambda vector_size: {"size": vector_size, "distance": "cosine"},
     )
 
@@ -76,10 +82,23 @@ def test_qdrant_vector_index_search_maps_results() -> None:
 
     results = index.search([1.0, 0.0], top_k=3)
 
-    assert client.query_calls == [("chunks", [1.0, 0.0], 3)]
+    assert client.query_calls == [("chunks", [1.0, 0.0], 3, None)]
     assert results[0].id == "chunk1"
     assert results[0].score == 0.9
     assert results[0].rank == 1
+
+
+def test_qdrant_vector_index_pushes_metadata_filters_to_query() -> None:
+    client = FakeQdrantClient()
+    index = QdrantVectorIndex(
+        collection_name="chunks",
+        client=client,
+        filter_factory=lambda filters: {"must": filters},
+    )
+
+    index.search([1.0, 0.0], top_k=3, metadata_filters={"tenant_id": "acme"})
+
+    assert client.query_calls == [("chunks", [1.0, 0.0], 3, {"must": {"tenant_id": "acme"}})]
 
 
 def test_qdrant_vector_index_requires_optional_dependency_without_client() -> None:

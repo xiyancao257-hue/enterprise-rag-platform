@@ -19,11 +19,16 @@ class HashingVectorRetriever:
         self.embedding_model = embedding_model or HashingEmbeddingModel()
         self.vector_index = vector_index or InMemoryVectorIndex()
         for chunk in chunks:
-            self.vector_index.add(chunk.id, self.embedding_model.embed(chunk.text))
+            self.vector_index.add(chunk.id, self.embedding_model.embed(chunk.text), metadata=chunk.metadata)
 
-    def search(self, query: str, top_k: int = 10) -> list[SearchHit]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        metadata_filters: dict[str, str] | None = None,
+    ) -> list[SearchHit]:
         query_vector = self.embedding_model.embed(query)
-        results = self.vector_index.search(query_vector, top_k=top_k)
+        results = self.vector_index.search(query_vector, top_k=top_k, metadata_filters=metadata_filters)
         return [
             SearchHit(
                 chunk=self.chunks_by_id[result.id],

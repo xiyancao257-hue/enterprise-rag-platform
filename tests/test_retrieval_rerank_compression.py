@@ -128,12 +128,19 @@ def test_hybrid_retriever_uses_injected_vector_index() -> None:
         def __init__(self) -> None:
             self.added_ids: list[str] = []
             self.search_top_k: int | None = None
+            self.search_metadata_filters: dict[str, str] | None = None
 
-        def add(self, id: str, vector: list[float]) -> None:
+        def add(self, id: str, vector: list[float], metadata: dict[str, str] | None = None) -> None:
             self.added_ids.append(id)
 
-        def search(self, query_vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
+        def search(
+            self,
+            query_vector: list[float],
+            top_k: int = 10,
+            metadata_filters: dict[str, str] | None = None,
+        ) -> list[VectorSearchResult]:
             self.search_top_k = top_k
+            self.search_metadata_filters = metadata_filters
             return [VectorSearchResult(id="rag", score=1.0, rank=1)]
 
     chunks = [
@@ -147,6 +154,43 @@ def test_hybrid_retriever_uses_injected_vector_index() -> None:
     assert vector_index.added_ids == ["rag", "cleaning"]
     assert vector_index.search_top_k == 2
     assert hits[0].chunk.id == "rag"
+
+
+def test_hybrid_retriever_pushes_metadata_filters_into_vector_index() -> None:
+    class TrackingVectorIndex:
+        def __init__(self) -> None:
+            self.search_metadata_filters: dict[str, str] | None = None
+
+        def add(self, id: str, vector: list[float], metadata: dict[str, str] | None = None) -> None:
+            pass
+
+        def search(
+            self,
+            query_vector: list[float],
+            top_k: int = 10,
+            metadata_filters: dict[str, str] | None = None,
+        ) -> list[VectorSearchResult]:
+            self.search_metadata_filters = metadata_filters
+            return [VectorSearchResult(id="security", score=1.0, rank=1)]
+
+    chunks = [
+        Chunk(
+            id="security",
+            document_id="doc1",
+            text="Retention policy for security logs.",
+            metadata={"department": "security"},
+        )
+    ]
+    vector_index = TrackingVectorIndex()
+
+    hits = HybridRetriever(chunks, vector_index=vector_index).search(
+        ["retention policy"],
+        top_k=1,
+        metadata_filters={"department": "security"},
+    )
+
+    assert vector_index.search_metadata_filters == {"department": "security"}
+    assert hits[0].chunk.id == "security"
 
 
 def test_hybrid_retriever_can_include_graph_hits() -> None:
