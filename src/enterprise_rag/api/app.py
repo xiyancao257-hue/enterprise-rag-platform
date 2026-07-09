@@ -16,9 +16,9 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
-from enterprise_rag.indexing.vector_sync import VectorIndexSync
-from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline, IngestReport
+from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
+from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
@@ -204,6 +204,10 @@ class IngestJobResponse(BaseModel):
     error: str | None = None
 
 
+def _log_event(event: str, **fields: object) -> None:
+    logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
+
+
 def create_app(
     index_path: Path = DEFAULT_INDEX,
     config_path: Path | None = None,
@@ -218,6 +222,13 @@ def create_app(
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
     app.state.ingest_jobs = ingest_job_store or InMemoryIngestJobStore()
+    app.state.ingest_job_runner = IngestJobRunner(
+        job_store=app.state.ingest_jobs,
+        index_path=index_path,
+        config=config,
+        record_failure=app.state.metrics.record_ingest_job_failure,
+        log_event=_log_event,
+    )
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -337,7 +348,7 @@ def create_app(
             request_id=request.state.request_id,
         )
         app.state.metrics.record_ingest_job_created()
-        background_tasks.add_task(_run_ingest_job, app, job.job_id)
+        background_tasks.add_task(app.state.ingest_job_runner.run, job.job_id)
         _log_event(
             "ingest_job_created",
             request_id=request.state.request_id,
@@ -425,56 +436,6 @@ def _trace_hit_response(hit: TraceHit) -> TraceHitResponse:
     )
 
 
-def _run_ingest_job(app: FastAPI, job_id: str) -> None:
-    job = app.state.ingest_jobs.get(job_id)
-    if job is None:
-        return
-
-    app.state.ingest_jobs.mark_running(job_id)
-    started_at = time.perf_counter()
-    try:
-        metadata_overrides = _tenant_metadata_filter(job.tenant_id)
-        store = JsonChunkStore(app.state.index_path)
-        report = IncrementalIngestPipeline().run(
-            Path(job.source_path),
-            store,
-            metadata_overrides=metadata_overrides,
-        )
-        vector_sync = None
-        if job.sync_vectors:
-            chunks_by_id = {chunk.id: chunk for chunk in store.load()}
-            chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
-            sync_report = VectorIndexSync().sync(
-                create_vector_index(app.state.config.vector_index),
-                chunks_to_upsert=chunks_to_upsert,
-                chunk_ids_to_delete=list(report.chunks_deleted),
-            )
-            vector_sync = {
-                "vectors_upserted": sync_report.vectors_upserted,
-                "vectors_deleted": sync_report.vectors_deleted,
-            }
-        app.state.ingest_jobs.mark_succeeded(job_id, report=report, vector_sync=vector_sync)
-        _log_event(
-            "ingest_job_completed",
-            request_id=job.request_id,
-            job_id=job.job_id,
-            tenant_id=job.tenant_id,
-            chunks_indexed=report.chunks_indexed,
-            latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
-        )
-    except Exception as exc:
-        app.state.metrics.record_ingest_job_failure()
-        app.state.ingest_jobs.mark_failed(job_id, error=str(exc))
-        _log_event(
-            "ingest_job_failed",
-            request_id=job.request_id,
-            job_id=job.job_id,
-            tenant_id=job.tenant_id,
-            error=str(exc),
-            latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
-        )
-
-
 def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResponse:
     return IngestJobResponse(
         request_id=request_id,
@@ -501,10 +462,6 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),
     )
-
-
-def _log_event(event: str, **fields: object) -> None:
-    logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
 
 def _authorize_request(request: Request, config: AppConfig) -> AuthContext:
