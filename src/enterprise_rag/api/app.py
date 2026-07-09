@@ -19,6 +19,7 @@ from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
+from enterprise_rag.rag.query_security import QueryGuard
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -142,6 +143,7 @@ def create_app(
     app.state.index_path = index_path
     app.state.config = config
     app.state.metrics = MetricsCollector()
+    app.state.query_guard = QueryGuard()
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -182,6 +184,25 @@ def create_app(
         auth_context = _authorize_request(request, app.state.config)
         tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
         started_at = time.perf_counter()
+        query_security = app.state.query_guard.check(payload.query)
+        if not query_security.allowed:
+            app.state.metrics.record_query_failure()
+            _log_event(
+                "query_rejected",
+                request_id=request.state.request_id,
+                reason=";".join(finding.label for finding in query_security.findings),
+                tenant_id=tenant_id,
+                latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Query rejected by safety policy.",
+                    "findings": [
+                        {"label": finding.label, "message": finding.message} for finding in query_security.findings
+                    ],
+                },
+            )
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
             app.state.metrics.record_query_failure()
