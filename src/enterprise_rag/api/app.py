@@ -21,6 +21,7 @@ from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InM
 from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.models import RagAnswer, SearchHit
+from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAuditLogger, NullAuditLogger
 from enterprise_rag.observability.costs import LLMCostEstimator
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
@@ -252,6 +253,7 @@ def create_app(
     config: AppConfig | None = None,
     ingest_job_store: IngestJobStore | None = None,
     ingest_job_queue_factory: Callable[[BackgroundTasks, IngestJobRunner], IngestJobQueue] | None = None,
+    audit_logger: AuditLogger | None = None,
 ) -> FastAPI:
     config = config or load_config(config_path)
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
@@ -260,6 +262,9 @@ def create_app(
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
+    app.state.audit_logger = audit_logger or (
+        JsonAuditLogger(Path(config.audit.path)) if config.audit.enabled else NullAuditLogger()
+    )
     app.state.ingest_jobs = ingest_job_store or InMemoryIngestJobStore()
     app.state.ingest_job_runner = IngestJobRunner(
         job_store=app.state.ingest_jobs,
@@ -316,6 +321,19 @@ def create_app(
         query_security = app.state.query_guard.check(payload.query)
         if not query_security.allowed:
             app.state.metrics.record_query_failure()
+            findings = [{"label": finding.label, "message": finding.message} for finding in query_security.findings]
+            app.state.audit_logger.log(
+                AuditEvent(
+                    event_type="query.rejected",
+                    request_id=request.state.request_id,
+                    tenant_id=tenant_id,
+                    principal=_audit_principal(request, auth_context),
+                    attributes={
+                        "reason": "safety_policy",
+                        "findings": findings,
+                    },
+                )
+            )
             _log_event(
                 "query_rejected",
                 request_id=request.state.request_id,
@@ -327,9 +345,7 @@ def create_app(
                 status_code=400,
                 detail={
                     "message": "Query rejected by safety policy.",
-                    "findings": [
-                        {"label": finding.label, "message": finding.message} for finding in query_security.findings
-                    ],
+                    "findings": findings,
                 },
             )
         chunks = JsonChunkStore(app.state.index_path).load()
@@ -382,6 +398,23 @@ def create_app(
             estimated_output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
         )
+        app.state.audit_logger.log(
+            AuditEvent(
+                event_type="query.completed",
+                request_id=request.state.request_id,
+                tenant_id=tenant_id,
+                principal=_audit_principal(request, auth_context),
+                attributes={
+                    "top_k": top_k,
+                    "query_length": len(payload.query),
+                    "citation_chunk_ids": [hit.chunk.id for hit in answer.citations],
+                    "user_groups": payload.user_groups,
+                    "estimated_input_tokens": cost.input_tokens,
+                    "estimated_output_tokens": cost.output_tokens,
+                    "estimated_cost_usd": cost.estimated_cost_usd,
+                },
+            )
+        )
         return _query_response(request.state.request_id, tenant_id, answer, trace if payload.include_trace else None)
 
     @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)
@@ -405,6 +438,20 @@ def create_app(
         )
         app.state.metrics.record_ingest_job_created()
         app.state.ingest_job_queue_factory(background_tasks, app.state.ingest_job_runner).publish(job.job_id)
+        app.state.audit_logger.log(
+            AuditEvent(
+                event_type="ingest_job.created",
+                request_id=request.state.request_id,
+                tenant_id=tenant_id,
+                principal=_audit_principal(request, auth_context),
+                attributes={
+                    "job_id": job.job_id,
+                    "source_path": str(source_path),
+                    "sync_vectors": payload.sync_vectors,
+                    "allowed_groups": payload.allowed_groups,
+                },
+            )
+        )
         _log_event(
             "ingest_job_created",
             request_id=request.state.request_id,
@@ -613,6 +660,16 @@ def _rate_limit_key(request: Request, tenant_id: str | None, auth_context: AuthC
     else:
         principal = request.headers.get(API_KEY_HEADER) or request.client.host if request.client else "anonymous"
     return f"{principal}:{tenant_id or 'public'}"
+
+
+def _audit_principal(request: Request, auth_context: AuthContext) -> str:
+    credential = auth_context.matched_credential
+    if credential is not None:
+        return f"api_key:{credential.key_hash}"
+    provided_key = _extract_api_key(request)
+    if provided_key:
+        return f"api_key:{_hash_api_key(provided_key)}"
+    return "anonymous"
 
 
 def _tenant_metadata_filter(tenant_id: str | None) -> dict[str, str]:

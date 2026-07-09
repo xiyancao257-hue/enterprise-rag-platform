@@ -52,6 +52,10 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "input_cost_per_1k_tokens": 0.1,
                 "output_cost_per_1k_tokens": 0.2,
             },
+            "audit": {
+                "enabled": True,
+                "path": "data/audit/test.jsonl",
+            },
         }
     )
 
@@ -76,6 +80,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1
     assert config.llm.output_cost_per_1k_tokens == 0.2
+    assert config.audit.enabled is True
+    assert config.audit.path == "data/audit/test.jsonl"
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

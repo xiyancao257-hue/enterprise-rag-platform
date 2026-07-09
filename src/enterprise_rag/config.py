@@ -57,6 +57,12 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class AuditConfig:
+    enabled: bool = False
+    path: str = "data/audit/audit.jsonl"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
@@ -64,6 +70,7 @@ class AppConfig:
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
     jobs: JobsConfig = field(default_factory=JobsConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    audit: AuditConfig = field(default_factory=AuditConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -84,6 +91,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     vector_index_data = _section(data, "vector_index")
     jobs_data = _section(data, "jobs")
     llm_data = _section(data, "llm")
+    audit_data = _section(data, "audit")
 
     return AppConfig(
         retrieval=RetrievalConfig(
@@ -134,6 +142,10 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             output_cost_per_1k_tokens=float(
                 llm_data.get("output_cost_per_1k_tokens", LLMConfig.output_cost_per_1k_tokens)
             ),
+        ),
+        audit=AuditConfig(
+            enabled=bool(audit_data.get("enabled", AuditConfig.enabled)),
+            path=str(audit_data.get("path", AuditConfig.path)),
         ),
     )
 

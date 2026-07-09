@@ -30,5 +30,9 @@
     "model": "gpt-4.1-mini",
     "input_cost_per_1k_tokens": 0.0,
     "output_cost_per_1k_tokens": 0.0
+  },
+  "audit": {
+    "enabled": false,
+    "path": "data/audit/audit.jsonl"
   }
 }
