@@ -33,6 +33,17 @@ class IngestJobRunner:
         job = self.job_store.get(job_id)
         if job is None:
             return
+        if job.status == "failed" and job.attempt_count >= job.max_attempts:
+            self.log_event(
+                "ingest_job_retry_exhausted",
+                request_id=job.request_id,
+                job_id=job.job_id,
+                tenant_id=job.tenant_id,
+                status=job.status,
+                attempt_count=job.attempt_count,
+                max_attempts=job.max_attempts,
+            )
+            return
         if job.status not in self.RUNNABLE_STATUSES:
             self.log_event(
                 "ingest_job_skipped",
@@ -40,6 +51,7 @@ class IngestJobRunner:
                 job_id=job.job_id,
                 tenant_id=job.tenant_id,
                 status=job.status,
+                attempt_count=job.attempt_count,
             )
             return
 

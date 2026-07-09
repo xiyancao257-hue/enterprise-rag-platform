@@ -21,6 +21,8 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
     assert reloaded.source_path == "data/raw"
     assert reloaded.tenant_id == "acme"
     assert reloaded.sync_vectors is True
+    assert reloaded.attempt_count == 0
+    assert reloaded.max_attempts == 3
     assert reloaded.created_at == 100.0
 
 
@@ -51,6 +53,7 @@ def test_json_ingest_job_store_persists_status_updates(tmp_path: Path) -> None:
     assert reloaded is not None
     assert reloaded.status == "succeeded"
     assert reloaded.updated_at == 102.0
+    assert reloaded.attempt_count == 1
     assert reloaded.report is not None
     assert reloaded.report.chunks_upserted == ("chunk_new",)
     assert reloaded.report.chunks_deleted == ("chunk_old",)
@@ -68,3 +71,17 @@ def test_json_ingest_job_store_persists_failures(tmp_path: Path) -> None:
     assert reloaded is not None
     assert reloaded.status == "failed"
     assert reloaded.error == "OCR failed"
+
+
+def test_json_ingest_job_store_preserves_attempt_metadata(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    store = JsonIngestJobStore(store_path)
+    job = store.create("data/raw", tenant_id=None, sync_vectors=False, request_id="req_123")
+
+    store.mark_running(job.job_id)
+    store.mark_failed(job.job_id, error="temporary failure")
+
+    reloaded = JsonIngestJobStore(store_path).get(job.job_id)
+    assert reloaded is not None
+    assert reloaded.attempt_count == 1
+    assert reloaded.max_attempts == 3

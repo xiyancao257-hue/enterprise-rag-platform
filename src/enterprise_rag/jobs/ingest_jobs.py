@@ -21,6 +21,8 @@ class IngestJobRecord:
     request_id: str
     created_at: float
     updated_at: float
+    attempt_count: int = 0
+    max_attempts: int = 3
     report: IngestReport | None = None
     vector_sync: dict[str, int] | None = None
     error: str | None = None
@@ -62,7 +64,8 @@ class InMemoryIngestJobStore:
         return self.jobs.get(job_id)
 
     def mark_running(self, job_id: str) -> None:
-        self._update(job_id, status="running")
+        job = self.jobs[job_id]
+        self._update(job_id, status="running", attempt_count=job.attempt_count + 1)
 
     def mark_succeeded(
         self,
@@ -70,7 +73,7 @@ class InMemoryIngestJobStore:
         report: IngestReport,
         vector_sync: dict[str, int] | None = None,
     ) -> None:
-        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync)
+        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync, error=None)
 
     def mark_failed(self, job_id: str, error: str) -> None:
         self._update(job_id, status="failed", error=error)
@@ -98,7 +101,9 @@ class JsonIngestJobStore:
         return self._load().get(job_id)
 
     def mark_running(self, job_id: str) -> None:
-        self._update(job_id, status="running")
+        jobs = self._load()
+        job = jobs[job_id]
+        self._update(job_id, status="running", attempt_count=job.attempt_count + 1)
 
     def mark_succeeded(
         self,
@@ -106,7 +111,7 @@ class JsonIngestJobStore:
         report: IngestReport,
         vector_sync: dict[str, int] | None = None,
     ) -> None:
-        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync)
+        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync, error=None)
 
     def mark_failed(self, job_id: str, error: str) -> None:
         self._update(job_id, status="failed", error=error)
@@ -148,6 +153,8 @@ def _new_job(
         request_id=request_id,
         created_at=now,
         updated_at=now,
+        attempt_count=0,
+        max_attempts=3,
     )
 
 
@@ -174,6 +181,8 @@ def _job_from_dict(item: dict[str, object]) -> IngestJobRecord:
         request_id=str(item["request_id"]),
         created_at=float(item["created_at"]),
         updated_at=float(item["updated_at"]),
+        attempt_count=int(item.get("attempt_count", 0)),
+        max_attempts=int(item.get("max_attempts", 3)),
         report=report,
         vector_sync=parsed_vector_sync,
         error=str(item["error"]) if item.get("error") is not None else None,
