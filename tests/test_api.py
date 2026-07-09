@@ -455,6 +455,107 @@ def test_query_rejects_oversized_input(tmp_path) -> None:
     assert response.json()["detail"]["findings"][0]["label"] == "query_too_long"
 
 
+def test_query_rate_limit_blocks_repeated_requests(tmp_path, caplog) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="acme",
+                document_id="doc1",
+                text="Retention policy for Acme is 90 days.",
+                metadata={"tenant_id": "acme"},
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                rate_limit_requests=1,
+                rate_limit_window_seconds=60,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+    caplog.set_level(logging.INFO, logger="enterprise_rag.api")
+
+    first_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+    second_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 429
+    assert 1 <= int(second_response.headers["Retry-After"]) <= 60
+    assert second_response.json()["detail"] == "Rate limit exceeded."
+    events = [json.loads(record.message) for record in caplog.records]
+    assert any(event["event"] == "query_rate_limited" for event in events)
+
+
+def test_query_rate_limit_is_scoped_by_tenant(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="acme",
+                document_id="doc1",
+                text="Retention policy for Acme is 90 days.",
+                metadata={"tenant_id": "acme"},
+            ),
+            Chunk(
+                id="globex",
+                document_id="doc2",
+                text="Retention policy for Globex is 7 years.",
+                metadata={"tenant_id": "globex"},
+            ),
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                rate_limit_requests=1,
+                rate_limit_window_seconds=60,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("admin-key"),
+                        allowed_tenants=("*",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    acme_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "admin-key", TENANT_ID_HEADER: "acme"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+    globex_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "admin-key", TENANT_ID_HEADER: "globex"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert acme_response.status_code == 200
+    assert globex_response.status_code == 200
+
+
 def test_query_rejects_tenant_not_allowed_for_api_key(tmp_path) -> None:
     index_path = tmp_path / "chunks.json"
     JsonChunkStore(index_path).save(

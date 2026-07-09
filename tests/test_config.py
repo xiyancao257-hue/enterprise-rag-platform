@@ -28,6 +28,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "require_api_key": True,
                 "api_key_env_var": "ENTERPRISE_RAG_TEST_KEYS",
                 "api_key_hashes": ["abc123"],
+                "rate_limit_requests": 10,
+                "rate_limit_window_seconds": 30,
                 "api_keys": [
                     {
                         "key_hash": "def456",
@@ -51,6 +53,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.api_security.require_api_key is True
     assert config.api_security.api_key_env_var == "ENTERPRISE_RAG_TEST_KEYS"
     assert config.api_security.api_key_hashes == ("abc123",)
+    assert config.api_security.rate_limit_requests == 10
+    assert config.api_security.rate_limit_window_seconds == 30
     assert config.api_security.api_keys[0].key_hash == "def456"
     assert config.api_security.api_keys[0].allowed_tenants == ("acme", "globex")
     assert config.vector_index.provider == "qdrant"

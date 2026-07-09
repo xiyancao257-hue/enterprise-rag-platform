@@ -12,7 +12,9 @@
     "require_api_key": false,
     "api_key_env_var": "ENTERPRISE_RAG_API_KEYS",
     "api_key_hashes": [],
-    "api_keys": []
+    "api_keys": [],
+    "rate_limit_requests": 60,
+    "rate_limit_window_seconds": 60
   },
   "vector_index": {
     "provider": "memory",

@@ -35,6 +35,35 @@ class AuthContext:
     matched_credential: ApiKeyCredential | None = None
 
 
+@dataclass(frozen=True)
+class RateLimitDecision:
+    allowed: bool
+    retry_after_seconds: int = 0
+
+
+class FixedWindowRateLimiter:
+    def __init__(self, now: Callable[[], float] | None = None) -> None:
+        self.now = now or time.time
+        self.windows: dict[str, tuple[float, int]] = {}
+
+    def check(self, key: str, limit: int, window_seconds: int) -> RateLimitDecision:
+        if limit <= 0 or window_seconds <= 0:
+            return RateLimitDecision(allowed=True)
+
+        now = self.now()
+        window_start, count = self.windows.get(key, (now, 0))
+        if now - window_start >= window_seconds:
+            window_start = now
+            count = 0
+
+        if count >= limit:
+            retry_after = max(1, int(window_seconds - (now - window_start)))
+            return RateLimitDecision(allowed=False, retry_after_seconds=retry_after)
+
+        self.windows[key] = (window_start, count + 1)
+        return RateLimitDecision(allowed=True)
+
+
 class MetricsCollector:
     def __init__(self) -> None:
         self.http_requests_total = 0
@@ -144,6 +173,7 @@ def create_app(
     app.state.config = config
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
+    app.state.rate_limiter = FixedWindowRateLimiter()
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -184,6 +214,7 @@ def create_app(
         auth_context = _authorize_request(request, app.state.config)
         tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
         started_at = time.perf_counter()
+        _enforce_rate_limit(request, app.state.config, tenant_id, auth_context, started_at)
         query_security = app.state.query_guard.check(payload.query)
         if not query_security.allowed:
             app.state.metrics.record_query_failure()
@@ -359,6 +390,46 @@ def _authorize_tenant(request: Request, tenant_id: str, auth_context: AuthContex
         tenant_id=tenant_id,
     )
     raise HTTPException(status_code=403, detail="API key is not allowed for this tenant.")
+
+
+def _enforce_rate_limit(
+    request: Request,
+    config: AppConfig,
+    tenant_id: str | None,
+    auth_context: AuthContext,
+    started_at: float,
+) -> None:
+    limit_key = _rate_limit_key(request, tenant_id, auth_context)
+    decision = request.app.state.rate_limiter.check(
+        limit_key,
+        limit=config.api_security.rate_limit_requests,
+        window_seconds=config.api_security.rate_limit_window_seconds,
+    )
+    if decision.allowed:
+        return
+
+    request.app.state.metrics.record_query_failure()
+    _log_event(
+        "query_rate_limited",
+        request_id=request.state.request_id,
+        tenant_id=tenant_id,
+        retry_after_seconds=decision.retry_after_seconds,
+        latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+    )
+    raise HTTPException(
+        status_code=429,
+        detail="Rate limit exceeded.",
+        headers={"Retry-After": str(decision.retry_after_seconds)},
+    )
+
+
+def _rate_limit_key(request: Request, tenant_id: str | None, auth_context: AuthContext) -> str:
+    credential = auth_context.matched_credential
+    if credential is not None:
+        principal = credential.key_hash
+    else:
+        principal = request.headers.get(API_KEY_HEADER) or request.client.host if request.client else "anonymous"
+    return f"{principal}:{tenant_id or 'public'}"
 
 
 def _tenant_metadata_filter(tenant_id: str | None) -> dict[str, str]:

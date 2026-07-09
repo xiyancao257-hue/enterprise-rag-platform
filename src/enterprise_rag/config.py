@@ -31,6 +31,8 @@ class ApiSecurityConfig:
     api_key_env_var: str = "ENTERPRISE_RAG_API_KEYS"
     api_key_hashes: tuple[str, ...] = ()
     api_keys: tuple[ApiKeyCredential, ...] = ()
+    rate_limit_requests: int = 60
+    rate_limit_window_seconds: int = 60
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,15 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             api_key_env_var=str(api_security_data.get("api_key_env_var", ApiSecurityConfig.api_key_env_var)),
             api_key_hashes=tuple(str(value) for value in api_security_data.get("api_key_hashes", ())),
             api_keys=_parse_api_key_credentials(api_security_data.get("api_keys", [])),
+            rate_limit_requests=int(
+                api_security_data.get("rate_limit_requests", ApiSecurityConfig.rate_limit_requests)
+            ),
+            rate_limit_window_seconds=int(
+                api_security_data.get(
+                    "rate_limit_window_seconds",
+                    ApiSecurityConfig.rate_limit_window_seconds,
+                )
+            ),
         ),
         vector_index=VectorIndexConfig(
             provider=str(vector_index_data.get("provider", VectorIndexConfig.provider)),
