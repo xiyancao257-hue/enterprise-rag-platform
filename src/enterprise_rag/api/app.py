@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from hashlib import sha256
 from hmac import compare_digest
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from enterprise_rag.config import AppConfig, load_config
+from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
@@ -26,6 +27,11 @@ REQUEST_ID_HEADER = "X-Request-ID"
 API_KEY_HEADER = "X-API-Key"
 TENANT_ID_HEADER = "X-Tenant-ID"
 logger = logging.getLogger("enterprise_rag.api")
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    matched_credential: ApiKeyCredential | None = None
 
 
 class MetricsCollector:
@@ -172,8 +178,8 @@ def create_app(
 
     @app.post("/query", response_model=QueryResponse)
     def query(payload: QueryRequest, request: Request) -> QueryResponse:
-        _authorize_request(request, app.state.config)
-        tenant_id = _resolve_tenant_id(request, app.state.config)
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
         started_at = time.perf_counter()
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
@@ -284,24 +290,28 @@ def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
 
-def _authorize_request(request: Request, config: AppConfig) -> None:
+def _authorize_request(request: Request, config: AppConfig) -> AuthContext:
     if not config.api_security.require_api_key:
-        return
+        return AuthContext()
 
     provided_key = _extract_api_key(request)
-    if provided_key is None or not _is_valid_api_key(provided_key, config):
+    matched_credential = _match_api_key(provided_key, config) if provided_key is not None else None
+    if matched_credential is None and (provided_key is None or not _is_valid_api_key(provided_key, config)):
         _log_event(
             "api_auth_failed",
             request_id=request.state.request_id,
             path=request.url.path,
         )
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    return AuthContext(matched_credential=matched_credential)
 
 
-def _resolve_tenant_id(request: Request, config: AppConfig) -> str | None:
+def _resolve_tenant_id(request: Request, config: AppConfig, auth_context: AuthContext) -> str | None:
     tenant_id = request.headers.get(TENANT_ID_HEADER)
     if tenant_id:
-        return tenant_id.strip()
+        tenant_id = tenant_id.strip()
+        _authorize_tenant(request, tenant_id, auth_context)
+        return tenant_id
     if config.api_security.require_api_key:
         _log_event(
             "tenant_auth_failed",
@@ -310,6 +320,21 @@ def _resolve_tenant_id(request: Request, config: AppConfig) -> str | None:
         )
         raise HTTPException(status_code=400, detail="Missing X-Tenant-ID header.")
     return None
+
+
+def _authorize_tenant(request: Request, tenant_id: str, auth_context: AuthContext) -> None:
+    credential = auth_context.matched_credential
+    if credential is None or not credential.allowed_tenants or "*" in credential.allowed_tenants:
+        return
+    if tenant_id in credential.allowed_tenants:
+        return
+    _log_event(
+        "tenant_forbidden",
+        request_id=request.state.request_id,
+        path=request.url.path,
+        tenant_id=tenant_id,
+    )
+    raise HTTPException(status_code=403, detail="API key is not allowed for this tenant.")
 
 
 def _tenant_metadata_filter(tenant_id: str | None) -> dict[str, str]:
@@ -340,6 +365,14 @@ def _is_valid_api_key(provided_key: str, config: AppConfig) -> bool:
         if compare_digest(provided_key, expected_key):
             return True
     return False
+
+
+def _match_api_key(provided_key: str, config: AppConfig) -> ApiKeyCredential | None:
+    provided_hash = _hash_api_key(provided_key)
+    for credential in config.api_security.api_keys:
+        if compare_digest(provided_hash, credential.key_hash):
+            return credential
+    return None
 
 
 def _hash_api_key(api_key: str) -> str:

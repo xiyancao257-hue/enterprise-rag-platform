@@ -11,7 +11,8 @@
   "api_security": {
     "require_api_key": false,
     "api_key_env_var": "ENTERPRISE_RAG_API_KEYS",
-    "api_key_hashes": []
+    "api_key_hashes": [],
+    "api_keys": []
   },
   "vector_index": {
     "provider": "qdrant",

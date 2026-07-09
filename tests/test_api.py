@@ -5,7 +5,7 @@ from hashlib import sha256
 from fastapi.testclient import TestClient
 
 from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, create_app
-from enterprise_rag.config import ApiSecurityConfig, AppConfig
+from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig
 from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
 
@@ -345,6 +345,120 @@ def test_query_enforces_tenant_isolation_even_if_query_asks_for_other_tenant(tmp
     assert payload["query_plan"]["metadata_filters"] == {"tenant_id": "globex"}
     assert payload["trace"]["metadata_filters"] == {"tenant_id": "acme"}
     assert {citation["chunk_id"] for citation in payload["citations"]} == {"acme"}
+
+
+def test_query_rejects_tenant_not_allowed_for_api_key(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="globex",
+                document_id="doc1",
+                text="Retention policy for Globex is 7 years.",
+                metadata={"tenant_id": "globex"},
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "globex"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "API key is not allowed for this tenant."
+
+
+def test_query_allows_tenant_bound_api_key_for_matching_tenant(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="acme",
+                document_id="doc1",
+                text="Retention policy for Acme is 90 days.",
+                metadata={"tenant_id": "acme"},
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tenant_id"] == "acme"
+
+
+def test_query_allows_wildcard_tenant_api_key(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="globex",
+                document_id="doc1",
+                text="Retention policy for Globex is 7 years.",
+                metadata={"tenant_id": "globex"},
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("admin-key"),
+                        allowed_tenants=("*",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "admin-key", TENANT_ID_HEADER: "globex"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tenant_id"] == "globex"
 
 
 def _hash_test_key(api_key: str) -> str:

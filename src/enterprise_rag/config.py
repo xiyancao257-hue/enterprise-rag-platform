@@ -20,10 +20,17 @@ class SecurityConfig:
 
 
 @dataclass(frozen=True)
+class ApiKeyCredential:
+    key_hash: str
+    allowed_tenants: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ApiSecurityConfig:
     require_api_key: bool = False
     api_key_env_var: str = "ENTERPRISE_RAG_API_KEYS"
     api_key_hashes: tuple[str, ...] = ()
+    api_keys: tuple[ApiKeyCredential, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             require_api_key=bool(api_security_data.get("require_api_key", ApiSecurityConfig.require_api_key)),
             api_key_env_var=str(api_security_data.get("api_key_env_var", ApiSecurityConfig.api_key_env_var)),
             api_key_hashes=tuple(str(value) for value in api_security_data.get("api_key_hashes", ())),
+            api_keys=_parse_api_key_credentials(api_security_data.get("api_keys", [])),
         ),
         vector_index=VectorIndexConfig(
             provider=str(vector_index_data.get("provider", VectorIndexConfig.provider)),
@@ -92,3 +100,22 @@ def _section(data: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Config section `{key}` must be a JSON object.")
     return value
+
+
+def _parse_api_key_credentials(value: Any) -> tuple[ApiKeyCredential, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Config field `api_security.api_keys` must be a list.")
+
+    credentials = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Each `api_security.api_keys` entry must be a JSON object.")
+        credentials.append(
+            ApiKeyCredential(
+                key_hash=str(item.get("key_hash", "")),
+                allowed_tenants=tuple(str(tenant) for tenant in item.get("allowed_tenants", ())),
+            )
+        )
+    return tuple(credentials)
