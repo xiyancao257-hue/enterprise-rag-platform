@@ -145,6 +145,8 @@ def test_incremental_ingest_reuses_unchanged_chunks(tmp_path: Path) -> None:
     assert first_report.documents_unchanged == 0
     assert second_report.documents_new == 0
     assert second_report.documents_unchanged == 1
+    assert second_report.chunks_upserted == ()
+    assert second_report.chunks_deleted == ()
     assert second_chunks == first_chunks
 
 
@@ -163,6 +165,9 @@ def test_incremental_ingest_replaces_changed_document_chunks(tmp_path: Path) -> 
 
     assert report.documents_updated == 1
     assert report.documents_unchanged == 0
+    assert len(report.chunks_upserted) == 1
+    assert len(report.chunks_deleted) == 1
+    assert report.chunks_upserted != report.chunks_deleted
     assert len(chunks) == 1
     assert "reranking" in chunks[0].text
 
@@ -184,5 +189,7 @@ def test_incremental_ingest_removes_chunks_for_deleted_documents(tmp_path: Path)
 
     assert report.documents_deleted == 1
     assert report.documents_unchanged == 1
+    assert len(report.chunks_deleted) == 1
+    assert report.chunks_upserted == ()
     assert len(chunks) == 1
     assert chunks[0].metadata["filename"] == "keep.md"

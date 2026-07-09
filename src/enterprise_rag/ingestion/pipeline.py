@@ -20,6 +20,8 @@ class IngestReport:
     documents_deleted: int
     documents_filtered: int
     chunks_indexed: int
+    chunks_upserted: tuple[str, ...] = ()
+    chunks_deleted: tuple[str, ...] = ()
 
 
 class IncrementalIngestPipeline:
@@ -44,6 +46,8 @@ class IncrementalIngestPipeline:
         documents_updated = 0
         documents_unchanged = 0
         documents_filtered = 0
+        chunks_upserted: list[str] = []
+        chunks_deleted: list[str] = []
 
         for document in documents:
             previous_chunks = existing_by_source.get(document.source_path, [])
@@ -55,14 +59,21 @@ class IncrementalIngestPipeline:
             processed_chunks = self._process_document(document)
             if not processed_chunks:
                 documents_filtered += 1
+                chunks_deleted.extend(chunk.id for chunk in previous_chunks)
             elif previous_chunks:
                 documents_updated += 1
+                chunks_deleted.extend(chunk.id for chunk in previous_chunks)
+                chunks_upserted.extend(chunk.id for chunk in processed_chunks)
             else:
                 documents_new += 1
+                chunks_upserted.extend(chunk.id for chunk in processed_chunks)
 
             next_chunks.extend(processed_chunks)
 
-        documents_deleted = len(set(existing_by_source) - current_sources)
+        deleted_sources = set(existing_by_source) - current_sources
+        for source in deleted_sources:
+            chunks_deleted.extend(chunk.id for chunk in existing_by_source[source])
+        documents_deleted = len(deleted_sources)
         store.save(next_chunks)
         return IngestReport(
             documents_loaded=len(documents),
@@ -72,6 +83,8 @@ class IncrementalIngestPipeline:
             documents_deleted=documents_deleted,
             documents_filtered=documents_filtered,
             chunks_indexed=len(next_chunks),
+            chunks_upserted=tuple(chunks_upserted),
+            chunks_deleted=tuple(chunks_deleted),
         )
 
     def _process_document(self, document: Document) -> list[Chunk]:

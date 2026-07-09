@@ -22,6 +22,7 @@ from enterprise_rag.evaluation.self_healing_workflow import (
     format_self_healing_workflow_report,
     run_self_healing_workflow,
 )
+from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
 from enterprise_rag.observability.query_logging import QueryLogger, build_query_log_record
@@ -42,6 +43,8 @@ def main() -> None:
     ingest_parser = subparsers.add_parser("ingest", help="Load, clean, parse, and chunk documents")
     ingest_parser.add_argument("path", type=Path, help="File or directory to ingest")
     ingest_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    ingest_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
+    ingest_parser.add_argument("--sync-vectors", action="store_true", help="Sync changed chunks to the vector index")
 
     query_parser = subparsers.add_parser("query", help="Query the local RAG index")
     query_parser.add_argument("query")
@@ -143,7 +146,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "ingest":
-        ingest(args.path, args.index)
+        ingest(args.path, args.index, args.config, args.sync_vectors)
     elif args.command == "query":
         config = load_config(args.config)
         top_k = args.top_k if args.top_k is not None else config.retrieval.top_k
@@ -191,8 +194,9 @@ def main() -> None:
         readiness_report(args.index, args.eval_path, args.query_log, args.self_healing_dir, args.k)
 
 
-def ingest(path: Path, index_path: Path) -> None:
-    report = IncrementalIngestPipeline().run(path, JsonChunkStore(index_path))
+def ingest(path: Path, index_path: Path, config_path: Path | None = None, sync_vectors: bool = False) -> None:
+    store = JsonChunkStore(index_path)
+    report = IncrementalIngestPipeline().run(path, store)
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
     print(
         "Ingest report: "
@@ -202,6 +206,16 @@ def ingest(path: Path, index_path: Path) -> None:
         f"deleted={report.documents_deleted}, "
         f"filtered={report.documents_filtered}"
     )
+    if sync_vectors:
+        config = load_config(config_path)
+        chunks_by_id = {chunk.id: chunk for chunk in store.load()}
+        chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
+        sync_report = VectorIndexSync().sync(
+            create_vector_index(config.vector_index),
+            chunks_to_upsert=chunks_to_upsert,
+            chunk_ids_to_delete=list(report.chunks_deleted),
+        )
+        print(f"Vector sync report: upserted={sync_report.vectors_upserted}, deleted={sync_report.vectors_deleted}")
 
 
 def query(

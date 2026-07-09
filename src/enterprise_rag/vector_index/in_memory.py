@@ -12,6 +12,11 @@ class InMemoryVectorIndex:
         self.vectors[id] = vector
         self.metadata[id] = metadata or {}
 
+    def delete(self, ids: list[str]) -> None:
+        for id in ids:
+            self.vectors.pop(id, None)
+            self.metadata.pop(id, None)
+
     def search(
         self,
         query_vector: list[float],

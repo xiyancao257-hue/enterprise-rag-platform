@@ -32,3 +32,15 @@ def test_in_memory_vector_index_applies_metadata_filters_before_search() -> None
     results = index.search([1.0, 0.0], top_k=5, metadata_filters={"tenant_id": "acme"})
 
     assert [result.id for result in results] == ["acme"]
+
+
+def test_in_memory_vector_index_deletes_vectors_and_metadata() -> None:
+    index = InMemoryVectorIndex()
+    index.add("chunk1", [1.0, 0.0], metadata={"tenant_id": "acme"})
+    index.add("chunk2", [0.0, 1.0], metadata={"tenant_id": "acme"})
+
+    index.delete(["chunk1", "missing"])
+
+    assert [result.id for result in index.search([1.0, 0.0], top_k=5)] == []
+    assert [result.id for result in index.search([0.0, 1.0], top_k=5)] == ["chunk2"]
+    assert "chunk1" not in index.metadata

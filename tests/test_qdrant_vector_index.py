@@ -21,6 +21,7 @@ class FakeQdrantClient:
         self.collections: set[str] = set()
         self.created_collections = []
         self.upserts = []
+        self.deletes = []
         self.query_calls = []
         self.response = FakeQueryResponse(points=[FakePoint(id="chunk1", score=0.9)])
 
@@ -33,6 +34,9 @@ class FakeQdrantClient:
 
     def upsert(self, collection_name: str, points: list[object]) -> None:
         self.upserts.append((collection_name, points))
+
+    def delete(self, collection_name: str, points_selector: object) -> None:
+        self.deletes.append((collection_name, points_selector))
 
     def query_points(
         self,
@@ -99,6 +103,28 @@ def test_qdrant_vector_index_pushes_metadata_filters_to_query() -> None:
     index.search([1.0, 0.0], top_k=3, metadata_filters={"tenant_id": "acme"})
 
     assert client.query_calls == [("chunks", [1.0, 0.0], 3, {"must": {"tenant_id": "acme"}})]
+
+
+def test_qdrant_vector_index_deletes_points_by_id() -> None:
+    client = FakeQdrantClient()
+    index = QdrantVectorIndex(
+        collection_name="chunks",
+        client=client,
+        delete_selector_factory=lambda ids: {"points": ids},
+    )
+
+    index.delete(["chunk1", "chunk2"])
+
+    assert client.deletes == [("chunks", {"points": ["chunk1", "chunk2"]})]
+
+
+def test_qdrant_vector_index_skips_empty_delete() -> None:
+    client = FakeQdrantClient()
+    index = QdrantVectorIndex(collection_name="chunks", client=client)
+
+    index.delete([])
+
+    assert client.deletes == []
 
 
 def test_qdrant_vector_index_requires_optional_dependency_without_client() -> None:

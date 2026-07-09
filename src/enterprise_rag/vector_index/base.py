@@ -15,6 +15,9 @@ class VectorIndex(Protocol):
     def add(self, id: str, vector: list[float], metadata: dict[str, str] | None = None) -> None:
         """Add or replace a vector by id."""
 
+    def delete(self, ids: list[str]) -> None:
+        """Delete vectors by id."""
+
     def search(
         self,
         query_vector: list[float],
