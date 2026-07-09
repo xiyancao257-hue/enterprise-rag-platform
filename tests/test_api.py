@@ -670,5 +670,108 @@ def test_query_allows_wildcard_tenant_api_key(tmp_path) -> None:
     assert response.json()["tenant_id"] == "globex"
 
 
+def test_ingest_job_indexes_documents_and_records_status(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    index_path = tmp_path / "chunks.json"
+    client = TestClient(create_app(index_path=index_path))
+
+    create_response = client.post(
+        "/ingest-jobs",
+        headers={REQUEST_ID_HEADER: "req_ingest_123"},
+        json={"source_path": str(raw_dir)},
+    )
+
+    assert create_response.status_code == 202
+    job_id = create_response.json()["job_id"]
+    status_response = client.get(f"/ingest-jobs/{job_id}")
+    payload = status_response.json()
+    chunks = JsonChunkStore(index_path).load()
+    assert status_response.status_code == 200
+    assert payload["status"] == "succeeded"
+    assert payload["report"]["documents_new"] == 1
+    assert payload["report"]["chunks_indexed"] == 1
+    assert chunks[0].metadata["source_path"] == str(source)
+
+
+def test_ingest_job_applies_tenant_metadata_from_header(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    index_path = tmp_path / "chunks.json"
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"source_path": str(raw_dir)},
+    )
+
+    chunks = JsonChunkStore(index_path).load()
+    assert response.status_code == 202
+    assert response.json()["tenant_id"] == "acme"
+    assert chunks[0].metadata["tenant_id"] == "acme"
+    assert chunks[0].metadata["source_path"] == str(source)
+
+
+def test_ingest_job_status_is_tenant_scoped(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    app = create_app(
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("globex-key"),
+                        allowed_tenants=("globex",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"source_path": str(raw_dir)},
+    )
+    job_id = create_response.json()["job_id"]
+    cross_tenant_response = client.get(
+        f"/ingest-jobs/{job_id}",
+        headers={API_KEY_HEADER: "globex-key", TENANT_ID_HEADER: "globex"},
+    )
+
+    assert create_response.status_code == 202
+    assert cross_tenant_response.status_code == 404
+
+
 def _hash_test_key(api_key: str) -> str:
     return sha256(api_key.encode("utf-8")).hexdigest()

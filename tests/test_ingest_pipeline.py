@@ -193,3 +193,20 @@ def test_incremental_ingest_removes_chunks_for_deleted_documents(tmp_path: Path)
     assert report.chunks_upserted == ()
     assert len(chunks) == 1
     assert chunks[0].metadata["filename"] == "keep.md"
+
+
+def test_incremental_ingest_keeps_same_source_path_separate_by_tenant(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    pipeline = IncrementalIngestPipeline()
+
+    pipeline.run(raw_dir, store, metadata_overrides={"tenant_id": "acme"})
+    report = pipeline.run(raw_dir, store, metadata_overrides={"tenant_id": "globex"})
+    chunks = store.load()
+
+    assert report.documents_new == 1
+    assert len(chunks) == 2
+    assert {chunk.metadata["tenant_id"] for chunk in chunks} == {"acme", "globex"}

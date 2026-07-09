@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from enterprise_rag.ingestion.loaders import load_documents
@@ -35,13 +35,27 @@ class IncrementalIngestPipeline:
         self.parser = parser or StructureParser()
         self.chunker = chunker or StructureAwareChunker()
 
-    def run(self, source_path: Path, store: JsonChunkStore) -> IngestReport:
+    def run(
+        self,
+        source_path: Path,
+        store: JsonChunkStore,
+        metadata_overrides: dict[str, str] | None = None,
+    ) -> IngestReport:
+        metadata_overrides = metadata_overrides or {}
+        ingest_scope = metadata_overrides.get("tenant_id", "")
         existing_chunks = store.load()
         existing_by_source = self._group_by_source(existing_chunks)
-        documents = load_documents(source_path)
-        current_sources = {document.source_path for document in documents}
+        documents = [
+            self._with_metadata_overrides(document, metadata_overrides) for document in load_documents(source_path)
+        ]
+        current_sources = {self._source_key(document.metadata, document.source_path) for document in documents}
 
-        next_chunks: list[Chunk] = []
+        next_chunks = [
+            chunk
+            for source_key, chunks in existing_by_source.items()
+            if source_key[0] != ingest_scope
+            for chunk in chunks
+        ]
         documents_new = 0
         documents_updated = 0
         documents_unchanged = 0
@@ -50,7 +64,7 @@ class IncrementalIngestPipeline:
         chunks_deleted: list[str] = []
 
         for document in documents:
-            previous_chunks = existing_by_source.get(document.source_path, [])
+            previous_chunks = existing_by_source.get(self._source_key(document.metadata, document.source_path), [])
             if previous_chunks and self._content_hash(previous_chunks) == document.metadata.get("content_hash"):
                 next_chunks.extend(previous_chunks)
                 documents_unchanged += 1
@@ -70,7 +84,8 @@ class IncrementalIngestPipeline:
 
             next_chunks.extend(processed_chunks)
 
-        deleted_sources = set(existing_by_source) - current_sources
+        existing_sources_in_scope = {source_key for source_key in existing_by_source if source_key[0] == ingest_scope}
+        deleted_sources = existing_sources_in_scope - current_sources
         for source in deleted_sources:
             chunks_deleted.extend(chunk.id for chunk in existing_by_source[source])
         documents_deleted = len(deleted_sources)
@@ -95,12 +110,12 @@ class IncrementalIngestPipeline:
         return self.chunker.chunk(blocks)
 
     def _group_by_source(self, chunks: list[Chunk]) -> dict[str, list[Chunk]]:
-        grouped: dict[str, list[Chunk]] = {}
+        grouped: dict[tuple[str, str], list[Chunk]] = {}
         for chunk in chunks:
             source_path = chunk.metadata.get("source_path")
             if source_path is None:
                 continue
-            grouped.setdefault(source_path, []).append(chunk)
+            grouped.setdefault(self._source_key(chunk.metadata, source_path), []).append(chunk)
         return grouped
 
     def _content_hash(self, chunks: list[Chunk]) -> str | None:
@@ -109,3 +124,11 @@ class IncrementalIngestPipeline:
             if content_hash:
                 return content_hash
         return None
+
+    def _with_metadata_overrides(self, document: Document, metadata_overrides: dict[str, str]) -> Document:
+        if not metadata_overrides:
+            return document
+        return replace(document, metadata={**document.metadata, **metadata_overrides})
+
+    def _source_key(self, metadata: dict[str, str], source_path: str) -> tuple[str, str]:
+        return (metadata.get("tenant_id", ""), source_path)

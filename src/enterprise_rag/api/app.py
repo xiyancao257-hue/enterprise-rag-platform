@@ -11,11 +11,13 @@ from hmac import compare_digest
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
+from enterprise_rag.indexing.vector_sync import VectorIndexSync
+from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline, IngestReport
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
@@ -72,6 +74,8 @@ class MetricsCollector:
         self.query_latency_ms_sum = 0.0
         self.query_latency_ms_count = 0
         self.query_citations_total = 0
+        self.ingest_jobs_total = 0
+        self.ingest_job_failures_total = 0
 
     def record_http_request(self) -> None:
         self.http_requests_total += 1
@@ -86,6 +90,12 @@ class MetricsCollector:
         self.query_requests_total += 1
         self.query_failures_total += 1
 
+    def record_ingest_job_created(self) -> None:
+        self.ingest_jobs_total += 1
+
+    def record_ingest_job_failure(self) -> None:
+        self.ingest_job_failures_total += 1
+
     def render_prometheus(self) -> str:
         metrics = {
             "enterprise_rag_http_requests_total": self.http_requests_total,
@@ -94,8 +104,69 @@ class MetricsCollector:
             "enterprise_rag_query_latency_ms_sum": round(self.query_latency_ms_sum, 4),
             "enterprise_rag_query_latency_ms_count": self.query_latency_ms_count,
             "enterprise_rag_query_citations_total": self.query_citations_total,
+            "enterprise_rag_ingest_jobs_total": self.ingest_jobs_total,
+            "enterprise_rag_ingest_job_failures_total": self.ingest_job_failures_total,
         }
         return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
+
+
+@dataclass
+class IngestJobRecord:
+    job_id: str
+    status: str
+    source_path: str
+    tenant_id: str | None
+    sync_vectors: bool
+    request_id: str
+    created_at: float
+    updated_at: float
+    report: IngestReport | None = None
+    vector_sync: dict[str, int] | None = None
+    error: str | None = None
+
+
+class InMemoryIngestJobStore:
+    def __init__(self, now: Callable[[], float] | None = None) -> None:
+        self.now = now or time.time
+        self.jobs: dict[str, IngestJobRecord] = {}
+
+    def create(self, source_path: str, tenant_id: str | None, sync_vectors: bool, request_id: str) -> IngestJobRecord:
+        now = self.now()
+        job = IngestJobRecord(
+            job_id=f"job_{uuid4().hex}",
+            status="queued",
+            source_path=source_path,
+            tenant_id=tenant_id,
+            sync_vectors=sync_vectors,
+            request_id=request_id,
+            created_at=now,
+            updated_at=now,
+        )
+        self.jobs[job.job_id] = job
+        return job
+
+    def get(self, job_id: str) -> IngestJobRecord | None:
+        return self.jobs.get(job_id)
+
+    def mark_running(self, job_id: str) -> None:
+        self._update(job_id, status="running")
+
+    def mark_succeeded(
+        self,
+        job_id: str,
+        report: IngestReport,
+        vector_sync: dict[str, int] | None = None,
+    ) -> None:
+        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync)
+
+    def mark_failed(self, job_id: str, error: str) -> None:
+        self._update(job_id, status="failed", error=error)
+
+    def _update(self, job_id: str, **changes: object) -> None:
+        job = self.jobs[job_id]
+        for key, value in changes.items():
+            setattr(job, key, value)
+        job.updated_at = self.now()
 
 
 class QueryRequest(BaseModel):
@@ -103,6 +174,11 @@ class QueryRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=50)
     user_groups: list[str] = Field(default_factory=list)
     include_trace: bool = False
+
+
+class IngestJobRequest(BaseModel):
+    source_path: str = Field(min_length=1)
+    sync_vectors: bool = False
 
 
 class QueryPlanResponse(BaseModel):
@@ -162,6 +238,30 @@ class HealthResponse(BaseModel):
     vector_index_provider: str
 
 
+class IngestReportResponse(BaseModel):
+    documents_loaded: int
+    documents_new: int
+    documents_updated: int
+    documents_unchanged: int
+    documents_deleted: int
+    documents_filtered: int
+    chunks_indexed: int
+    chunks_upserted: list[str]
+    chunks_deleted: list[str]
+
+
+class IngestJobResponse(BaseModel):
+    request_id: str
+    job_id: str
+    status: str
+    source_path: str
+    tenant_id: str | None = None
+    sync_vectors: bool
+    report: IngestReportResponse | None = None
+    vector_sync: dict[str, int] | None = None
+    error: str | None = None
+
+
 def create_app(
     index_path: Path = DEFAULT_INDEX,
     config_path: Path | None = None,
@@ -174,6 +274,7 @@ def create_app(
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
+    app.state.ingest_jobs = InMemoryIngestJobStore()
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -274,6 +375,46 @@ def create_app(
         )
         return _query_response(request.state.request_id, tenant_id, answer, trace if payload.include_trace else None)
 
+    @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)
+    def create_ingest_job(
+        payload: IngestJobRequest,
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> IngestJobResponse:
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
+        source_path = Path(payload.source_path)
+        if not source_path.exists():
+            raise HTTPException(status_code=400, detail="Ingest source path does not exist.")
+
+        job = app.state.ingest_jobs.create(
+            source_path=str(source_path),
+            tenant_id=tenant_id,
+            sync_vectors=payload.sync_vectors,
+            request_id=request.state.request_id,
+        )
+        app.state.metrics.record_ingest_job_created()
+        background_tasks.add_task(_run_ingest_job, app, job.job_id)
+        _log_event(
+            "ingest_job_created",
+            request_id=request.state.request_id,
+            job_id=job.job_id,
+            tenant_id=tenant_id,
+            sync_vectors=payload.sync_vectors,
+        )
+        return _ingest_job_response(request.state.request_id, job)
+
+    @app.get("/ingest-jobs/{job_id}", response_model=IngestJobResponse)
+    def get_ingest_job(job_id: str, request: Request) -> IngestJobResponse:
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
+        job = app.state.ingest_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Ingest job not found.")
+        if tenant_id is not None and job.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Ingest job not found.")
+        return _ingest_job_response(request.state.request_id, job)
+
     return app
 
 
@@ -338,6 +479,84 @@ def _trace_hit_response(hit: TraceHit) -> TraceHitResponse:
         rank=hit.rank,
         heading_path=list(hit.heading_path),
         source_path=hit.source_path,
+    )
+
+
+def _run_ingest_job(app: FastAPI, job_id: str) -> None:
+    job = app.state.ingest_jobs.get(job_id)
+    if job is None:
+        return
+
+    app.state.ingest_jobs.mark_running(job_id)
+    started_at = time.perf_counter()
+    try:
+        metadata_overrides = _tenant_metadata_filter(job.tenant_id)
+        store = JsonChunkStore(app.state.index_path)
+        report = IncrementalIngestPipeline().run(
+            Path(job.source_path),
+            store,
+            metadata_overrides=metadata_overrides,
+        )
+        vector_sync = None
+        if job.sync_vectors:
+            chunks_by_id = {chunk.id: chunk for chunk in store.load()}
+            chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
+            sync_report = VectorIndexSync().sync(
+                create_vector_index(app.state.config.vector_index),
+                chunks_to_upsert=chunks_to_upsert,
+                chunk_ids_to_delete=list(report.chunks_deleted),
+            )
+            vector_sync = {
+                "vectors_upserted": sync_report.vectors_upserted,
+                "vectors_deleted": sync_report.vectors_deleted,
+            }
+        app.state.ingest_jobs.mark_succeeded(job_id, report=report, vector_sync=vector_sync)
+        _log_event(
+            "ingest_job_completed",
+            request_id=job.request_id,
+            job_id=job.job_id,
+            tenant_id=job.tenant_id,
+            chunks_indexed=report.chunks_indexed,
+            latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+        )
+    except Exception as exc:
+        app.state.metrics.record_ingest_job_failure()
+        app.state.ingest_jobs.mark_failed(job_id, error=str(exc))
+        _log_event(
+            "ingest_job_failed",
+            request_id=job.request_id,
+            job_id=job.job_id,
+            tenant_id=job.tenant_id,
+            error=str(exc),
+            latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+        )
+
+
+def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResponse:
+    return IngestJobResponse(
+        request_id=request_id,
+        job_id=job.job_id,
+        status=job.status,
+        source_path=job.source_path,
+        tenant_id=job.tenant_id,
+        sync_vectors=job.sync_vectors,
+        report=_ingest_report_response(job.report) if job.report is not None else None,
+        vector_sync=job.vector_sync,
+        error=job.error,
+    )
+
+
+def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
+    return IngestReportResponse(
+        documents_loaded=report.documents_loaded,
+        documents_new=report.documents_new,
+        documents_updated=report.documents_updated,
+        documents_unchanged=report.documents_unchanged,
+        documents_deleted=report.documents_deleted,
+        documents_filtered=report.documents_filtered,
+        chunks_indexed=report.chunks_indexed,
+        chunks_upserted=list(report.chunks_upserted),
+        chunks_deleted=list(report.chunks_deleted),
     )
 
 
