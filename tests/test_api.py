@@ -807,5 +807,35 @@ def test_ingest_job_status_survives_app_restart_with_json_store(tmp_path) -> Non
     assert status_response.json()["report"]["chunks_indexed"] == 1
 
 
+def test_ingest_job_api_publishes_created_job_to_queue(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    published = []
+
+    class RecordingQueue:
+        def __init__(self, background_tasks, runner) -> None:
+            self.background_tasks = background_tasks
+            self.runner = runner
+
+        def publish(self, job_id: str) -> None:
+            published.append(job_id)
+
+    client = TestClient(
+        create_app(
+            index_path=tmp_path / "chunks.json",
+            ingest_job_queue_factory=RecordingQueue,
+        )
+    )
+
+    response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+
+    assert response.status_code == 202
+    assert published == [response.json()["job_id"]]
+
+
 def _hash_test_key(api_key: str) -> str:
     return sha256(api_key.encode("utf-8")).hexdigest()

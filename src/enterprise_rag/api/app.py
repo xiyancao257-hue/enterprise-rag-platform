@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
+from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
@@ -213,6 +214,7 @@ def create_app(
     config_path: Path | None = None,
     config: AppConfig | None = None,
     ingest_job_store: IngestJobStore | None = None,
+    ingest_job_queue_factory: Callable[[BackgroundTasks, IngestJobRunner], IngestJobQueue] | None = None,
 ) -> FastAPI:
     config = config or load_config(config_path)
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
@@ -229,6 +231,7 @@ def create_app(
         record_failure=app.state.metrics.record_ingest_job_failure,
         log_event=_log_event,
     )
+    app.state.ingest_job_queue_factory = ingest_job_queue_factory or FastApiBackgroundTaskQueue
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -348,7 +351,7 @@ def create_app(
             request_id=request.state.request_id,
         )
         app.state.metrics.record_ingest_job_created()
-        background_tasks.add_task(app.state.ingest_job_runner.run, job.job_id)
+        app.state.ingest_job_queue_factory(background_tasks, app.state.ingest_job_runner).publish(job.job_id)
         _log_event(
             "ingest_job_created",
             request_id=request.state.request_id,
