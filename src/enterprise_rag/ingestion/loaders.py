@@ -21,13 +21,14 @@ def load_documents(path: Path) -> list[Document]:
         text = normalize_text(raw_text)
         if not text:
             continue
+        content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         doc_id = hashlib.sha256(str(file.resolve()).encode("utf-8")).hexdigest()[:16]
         documents.append(
             Document(
                 id=doc_id,
                 source_path=str(file),
                 text=text,
-                metadata={"extension": file.suffix.lower(), "filename": file.name},
+                metadata={"extension": file.suffix.lower(), "filename": file.name, "content_hash": content_hash},
             )
         )
     return documents

@@ -22,13 +22,10 @@ from enterprise_rag.evaluation.self_healing_workflow import (
     format_self_healing_workflow_report,
     run_self_healing_workflow,
 )
-from enterprise_rag.ingestion.loaders import load_documents
+from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
 from enterprise_rag.observability.query_logging import QueryLogger, build_query_log_record
 from enterprise_rag.observability.tracing import format_query_trace
-from enterprise_rag.processing.chunking import StructureAwareChunker
-from enterprise_rag.processing.cleaning import DirtyDataCleaner
-from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.rag.citations import CitationFormatter
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.storage.json_store import JsonChunkStore
@@ -195,21 +192,16 @@ def main() -> None:
 
 
 def ingest(path: Path, index_path: Path) -> None:
-    cleaner = DirtyDataCleaner()
-    parser = StructureParser()
-    chunker = StructureAwareChunker()
-
-    documents = load_documents(path)
-    chunks = []
-    for document in documents:
-        cleaned = cleaner.clean(document)
-        if cleaned is None:
-            continue
-        blocks = parser.parse(cleaned)
-        chunks.extend(chunker.chunk(blocks))
-
-    JsonChunkStore(index_path).save(chunks)
-    print(f"Indexed {len(chunks)} chunks from {len(documents)} documents into {index_path}")
+    report = IncrementalIngestPipeline().run(path, JsonChunkStore(index_path))
+    print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
+    print(
+        "Ingest report: "
+        f"new={report.documents_new}, "
+        f"updated={report.documents_updated}, "
+        f"unchanged={report.documents_unchanged}, "
+        f"deleted={report.documents_deleted}, "
+        f"filtered={report.documents_filtered}"
+    )
 
 
 def query(

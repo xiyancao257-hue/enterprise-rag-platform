@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from enterprise_rag.ingestion.loaders import load_documents
+from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.models import BlockType, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -22,6 +23,7 @@ def test_load_documents_reads_supported_files(tmp_path: Path) -> None:
     assert documents[0].source_path == str(markdown)
     assert documents[0].metadata["extension"] == ".md"
     assert documents[0].metadata["filename"] == "guide.md"
+    assert documents[0].metadata["content_hash"]
 
 
 def test_cleaner_filters_low_quality_documents() -> None:
@@ -124,3 +126,63 @@ def test_ingest_chunks_can_round_trip_through_json_store(tmp_path: Path) -> None
 
     assert loaded == chunks
     assert loaded[0].metadata["source_path"] == "manual.md"
+
+
+def test_incremental_ingest_reuses_unchanged_chunks(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    pipeline = IncrementalIngestPipeline()
+
+    first_report = pipeline.run(raw_dir, store)
+    first_chunks = store.load()
+    second_report = pipeline.run(raw_dir, store)
+    second_chunks = store.load()
+
+    assert first_report.documents_new == 1
+    assert first_report.documents_unchanged == 0
+    assert second_report.documents_new == 0
+    assert second_report.documents_unchanged == 1
+    assert second_chunks == first_chunks
+
+
+def test_incremental_ingest_replaces_changed_document_chunks(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    pipeline = IncrementalIngestPipeline()
+
+    pipeline.run(raw_dir, store)
+    source.write_text("# Guide\n\nHybrid retrieval uses BM25, vectors, and reranking.", encoding="utf-8")
+    report = pipeline.run(raw_dir, store)
+    chunks = store.load()
+
+    assert report.documents_updated == 1
+    assert report.documents_unchanged == 0
+    assert len(chunks) == 1
+    assert "reranking" in chunks[0].text
+
+
+def test_incremental_ingest_removes_chunks_for_deleted_documents(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    keep = raw_dir / "keep.md"
+    remove = raw_dir / "remove.md"
+    keep.write_text("# Keep\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    remove.write_text("# Remove\n\nLegacy document that should leave the index.", encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    pipeline = IncrementalIngestPipeline()
+
+    pipeline.run(raw_dir, store)
+    remove.unlink()
+    report = pipeline.run(raw_dir, store)
+    chunks = store.load()
+
+    assert report.documents_deleted == 1
+    assert report.documents_unchanged == 1
+    assert len(chunks) == 1
+    assert chunks[0].metadata["filename"] == "keep.md"
