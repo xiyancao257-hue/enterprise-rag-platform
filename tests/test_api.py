@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, create_app
 from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig
+from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
 
@@ -771,6 +772,39 @@ def test_ingest_job_status_is_tenant_scoped(tmp_path) -> None:
 
     assert create_response.status_code == 202
     assert cross_tenant_response.status_code == 404
+
+
+def test_ingest_job_status_survives_app_restart_with_json_store(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "chunks.json"
+    job_store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    first_client = TestClient(
+        create_app(
+            index_path=index_path,
+            ingest_job_store=JsonIngestJobStore(job_store_path),
+        )
+    )
+
+    create_response = first_client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    job_id = create_response.json()["job_id"]
+    second_client = TestClient(
+        create_app(
+            index_path=index_path,
+            ingest_job_store=JsonIngestJobStore(job_store_path),
+        )
+    )
+
+    status_response = second_client.get(f"/ingest-jobs/{job_id}")
+
+    assert create_response.status_code == 202
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "succeeded"
+    assert status_response.json()["report"]["chunks_indexed"] == 1
 
 
 def _hash_test_key(api_key: str) -> str:

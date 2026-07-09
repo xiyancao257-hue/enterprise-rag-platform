@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline, IngestReport
+from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
@@ -108,65 +109,6 @@ class MetricsCollector:
             "enterprise_rag_ingest_job_failures_total": self.ingest_job_failures_total,
         }
         return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
-
-
-@dataclass
-class IngestJobRecord:
-    job_id: str
-    status: str
-    source_path: str
-    tenant_id: str | None
-    sync_vectors: bool
-    request_id: str
-    created_at: float
-    updated_at: float
-    report: IngestReport | None = None
-    vector_sync: dict[str, int] | None = None
-    error: str | None = None
-
-
-class InMemoryIngestJobStore:
-    def __init__(self, now: Callable[[], float] | None = None) -> None:
-        self.now = now or time.time
-        self.jobs: dict[str, IngestJobRecord] = {}
-
-    def create(self, source_path: str, tenant_id: str | None, sync_vectors: bool, request_id: str) -> IngestJobRecord:
-        now = self.now()
-        job = IngestJobRecord(
-            job_id=f"job_{uuid4().hex}",
-            status="queued",
-            source_path=source_path,
-            tenant_id=tenant_id,
-            sync_vectors=sync_vectors,
-            request_id=request_id,
-            created_at=now,
-            updated_at=now,
-        )
-        self.jobs[job.job_id] = job
-        return job
-
-    def get(self, job_id: str) -> IngestJobRecord | None:
-        return self.jobs.get(job_id)
-
-    def mark_running(self, job_id: str) -> None:
-        self._update(job_id, status="running")
-
-    def mark_succeeded(
-        self,
-        job_id: str,
-        report: IngestReport,
-        vector_sync: dict[str, int] | None = None,
-    ) -> None:
-        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync)
-
-    def mark_failed(self, job_id: str, error: str) -> None:
-        self._update(job_id, status="failed", error=error)
-
-    def _update(self, job_id: str, **changes: object) -> None:
-        job = self.jobs[job_id]
-        for key, value in changes.items():
-            setattr(job, key, value)
-        job.updated_at = self.now()
 
 
 class QueryRequest(BaseModel):
@@ -266,6 +208,7 @@ def create_app(
     index_path: Path = DEFAULT_INDEX,
     config_path: Path | None = None,
     config: AppConfig | None = None,
+    ingest_job_store: IngestJobStore | None = None,
 ) -> FastAPI:
     config = config or load_config(config_path)
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
@@ -274,7 +217,7 @@ def create_app(
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
-    app.state.ingest_jobs = InMemoryIngestJobStore()
+    app.state.ingest_jobs = ingest_job_store or InMemoryIngestJobStore()
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
