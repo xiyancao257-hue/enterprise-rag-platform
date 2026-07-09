@@ -47,12 +47,17 @@ class RagPipeline:
         query: str,
         top_k: int = 5,
         user_groups: set[str] | None = None,
+        mandatory_metadata_filters: dict[str, str] | None = None,
     ) -> tuple[RagAnswer, QueryTrace]:
         plan = self.query_engine.plan(query)
+        metadata_filters = {
+            **plan.metadata_filters,
+            **(mandatory_metadata_filters or {}),
+        }
         retrieved = self.retriever.search(
             list(plan.rewritten_queries),
             top_k=max(top_k * 2, 8),
-            metadata_filters=plan.metadata_filters,
+            metadata_filters=metadata_filters,
             user_groups=user_groups,
         )
         reranked = self.reranker.rerank(plan.normalized_query, retrieved, top_k=top_k)
@@ -63,7 +68,7 @@ class RagPipeline:
             original_query=plan.original_query,
             normalized_query=plan.normalized_query,
             rewritten_queries=plan.rewritten_queries,
-            metadata_filters=plan.metadata_filters,
+            metadata_filters=metadata_filters,
             retrieved=trace_hits(retrieved),
             reranked=trace_hits(reranked),
             final_context=trace_hits(compressed),

@@ -24,6 +24,7 @@ from enterprise_rag.vector_index.factory import create_vector_index
 DEFAULT_INDEX = Path("data/processed/chunks.json")
 REQUEST_ID_HEADER = "X-Request-ID"
 API_KEY_HEADER = "X-API-Key"
+TENANT_ID_HEADER = "X-Tenant-ID"
 logger = logging.getLogger("enterprise_rag.api")
 
 
@@ -110,6 +111,7 @@ class QueryTraceResponse(BaseModel):
 
 class QueryResponse(BaseModel):
     request_id: str
+    tenant_id: str | None = None
     answer: str
     query_plan: QueryPlanResponse
     citations: list[CitationResponse]
@@ -171,6 +173,7 @@ def create_app(
     @app.post("/query", response_model=QueryResponse)
     def query(payload: QueryRequest, request: Request) -> QueryResponse:
         _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config)
         started_at = time.perf_counter()
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
@@ -195,6 +198,7 @@ def create_app(
             payload.query,
             top_k=top_k,
             user_groups=set(payload.user_groups) or set(config.security.default_user_groups),
+            mandatory_metadata_filters=_tenant_metadata_filter(tenant_id),
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
         app.state.metrics.record_query_success(latency_ms=latency_ms, citation_count=len(answer.citations))
@@ -206,8 +210,9 @@ def create_app(
             citation_count=len(answer.citations),
             include_trace=payload.include_trace,
             vector_index_provider=config.vector_index.provider,
+            tenant_id=tenant_id,
         )
-        return _query_response(request.state.request_id, answer, trace if payload.include_trace else None)
+        return _query_response(request.state.request_id, tenant_id, answer, trace if payload.include_trace else None)
 
     return app
 
@@ -215,9 +220,15 @@ def create_app(
 app = create_app()
 
 
-def _query_response(request_id: str, answer: RagAnswer, trace: QueryTrace | None) -> QueryResponse:
+def _query_response(
+    request_id: str,
+    tenant_id: str | None,
+    answer: RagAnswer,
+    trace: QueryTrace | None,
+) -> QueryResponse:
     return QueryResponse(
         request_id=request_id,
+        tenant_id=tenant_id,
         answer=answer.answer,
         query_plan=QueryPlanResponse(
             original_query=answer.query_plan.original_query,
@@ -285,6 +296,26 @@ def _authorize_request(request: Request, config: AppConfig) -> None:
             path=request.url.path,
         )
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+def _resolve_tenant_id(request: Request, config: AppConfig) -> str | None:
+    tenant_id = request.headers.get(TENANT_ID_HEADER)
+    if tenant_id:
+        return tenant_id.strip()
+    if config.api_security.require_api_key:
+        _log_event(
+            "tenant_auth_failed",
+            request_id=request.state.request_id,
+            path=request.url.path,
+        )
+        raise HTTPException(status_code=400, detail="Missing X-Tenant-ID header.")
+    return None
+
+
+def _tenant_metadata_filter(tenant_id: str | None) -> dict[str, str]:
+    if tenant_id is None:
+        return {}
+    return {"tenant_id": tenant_id}
 
 
 def _extract_api_key(request: Request) -> str | None:

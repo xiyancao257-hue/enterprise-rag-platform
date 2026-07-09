@@ -4,7 +4,7 @@ from hashlib import sha256
 
 from fastapi.testclient import TestClient
 
-from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, create_app
+from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, create_app
 from enterprise_rag.config import ApiSecurityConfig, AppConfig
 from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
@@ -67,6 +67,7 @@ def test_query_returns_answer_plan_citations_and_request_id(tmp_path, caplog) ->
     assert response.status_code == 200
     assert response.headers[REQUEST_ID_HEADER] == "req_test_123"
     assert payload["request_id"] == "req_test_123"
+    assert payload["tenant_id"] is None
     assert "BM25" in payload["answer"]
     assert payload["query_plan"]["corrections"] == {"retrival": "retrieval"}
     assert payload["citations"][0]["chunk_id"] == "hybrid"
@@ -201,16 +202,17 @@ def test_query_accepts_hashed_api_key_or_bearer_token(tmp_path) -> None:
 
     header_response = client.post(
         "/query",
-        headers={API_KEY_HEADER: "correct-key"},
+        headers={API_KEY_HEADER: "correct-key", TENANT_ID_HEADER: "acme"},
         json={"query": "hybrid retrieval", "top_k": 1},
     )
     bearer_response = client.post(
         "/query",
-        headers={"Authorization": "Bearer correct-key"},
+        headers={"Authorization": "Bearer correct-key", TENANT_ID_HEADER: "acme"},
         json={"query": "hybrid retrieval", "top_k": 1},
     )
 
     assert header_response.status_code == 200
+    assert header_response.json()["tenant_id"] == "acme"
     assert bearer_response.status_code == 200
 
 
@@ -259,11 +261,90 @@ def test_query_accepts_api_key_from_environment(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         "/query",
-        headers={API_KEY_HEADER: "env-key-2"},
+        headers={API_KEY_HEADER: "env-key-2", TENANT_ID_HEADER: "acme"},
         json={"query": "hybrid retrieval", "top_k": 1},
     )
 
     assert response.status_code == 200
+
+
+def test_query_requires_tenant_id_when_auth_is_enabled(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "correct-key"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Missing X-Tenant-ID header."
+
+
+def test_query_enforces_tenant_isolation_even_if_query_asks_for_other_tenant(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="acme",
+                document_id="doc1",
+                text="Retention policy for Acme is 90 days.",
+                metadata={"tenant_id": "acme"},
+            ),
+            Chunk(
+                id="globex",
+                document_id="doc2",
+                text="Retention policy for Globex is 7 years.",
+                metadata={"tenant_id": "globex"},
+            ),
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "correct-key", TENANT_ID_HEADER: "acme"},
+        json={
+            "query": "tenant_id:globex retention policy",
+            "top_k": 5,
+            "include_trace": True,
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["tenant_id"] == "acme"
+    assert payload["query_plan"]["metadata_filters"] == {"tenant_id": "globex"}
+    assert payload["trace"]["metadata_filters"] == {"tenant_id": "acme"}
+    assert {citation["chunk_id"] for citation in payload["citations"]} == {"acme"}
 
 
 def _hash_test_key(api_key: str) -> str:

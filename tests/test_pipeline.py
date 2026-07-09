@@ -77,6 +77,33 @@ def test_pipeline_applies_query_metadata_filters() -> None:
     assert {hit.chunk.id for hit in answer.citations} == {"security"}
 
 
+def test_pipeline_mandatory_metadata_filters_override_query_filters() -> None:
+    chunks = [
+        Chunk(
+            id="acme",
+            document_id="doc1",
+            text="Retention policy for Acme is 90 days.",
+            metadata={"tenant_id": "acme"},
+        ),
+        Chunk(
+            id="globex",
+            document_id="doc2",
+            text="Retention policy for Globex is 7 years.",
+            metadata={"tenant_id": "globex"},
+        ),
+    ]
+
+    answer, trace = RagPipeline(chunks).answer_for_user_with_trace(
+        "tenant_id:globex retention policy",
+        top_k=5,
+        mandatory_metadata_filters={"tenant_id": "acme"},
+    )
+
+    assert answer.query_plan.metadata_filters == {"tenant_id": "globex"}
+    assert trace.metadata_filters == {"tenant_id": "acme"}
+    assert {hit.chunk.id for hit in answer.citations} == {"acme"}
+
+
 def test_pipeline_applies_user_group_acl_filters() -> None:
     chunks = [
         Chunk(
