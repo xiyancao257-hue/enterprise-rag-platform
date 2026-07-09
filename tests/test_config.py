@@ -46,6 +46,12 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "running_timeout_seconds": 900,
                 "worker_poll_seconds": 2.5,
             },
+            "llm": {
+                "provider": "openai",
+                "model": "gpt-test",
+                "input_cost_per_1k_tokens": 0.1,
+                "output_cost_per_1k_tokens": 0.2,
+            },
         }
     )
 
@@ -66,6 +72,10 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.vector_index.url == "http://qdrant:6333"
     assert config.jobs.running_timeout_seconds == 900
     assert config.jobs.worker_poll_seconds == 2.5
+    assert config.llm.provider == "openai"
+    assert config.llm.model == "gpt-test"
+    assert config.llm.input_cost_per_1k_tokens == 0.1
+    assert config.llm.output_cost_per_1k_tokens == 0.2
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

@@ -122,6 +122,9 @@ def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
     assert "enterprise_rag_query_failures_total 0" in metrics
     assert "enterprise_rag_query_latency_ms_count 1" in metrics
     assert "enterprise_rag_query_citations_total 1" in metrics
+    assert "enterprise_rag_query_estimated_input_tokens_total" in metrics
+    assert "enterprise_rag_query_estimated_output_tokens_total" in metrics
+    assert "enterprise_rag_query_estimated_cost_usd_sum" in metrics
 
 
 def test_metrics_records_failed_query(tmp_path) -> None:

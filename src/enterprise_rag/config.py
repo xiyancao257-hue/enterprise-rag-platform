@@ -49,12 +49,21 @@ class JobsConfig:
 
 
 @dataclass(frozen=True)
+class LLMConfig:
+    provider: str = "stub"
+    model: str = "gpt-4.1-mini"
+    input_cost_per_1k_tokens: float = 0.0
+    output_cost_per_1k_tokens: float = 0.0
+
+
+@dataclass(frozen=True)
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     api_security: ApiSecurityConfig = field(default_factory=ApiSecurityConfig)
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
     jobs: JobsConfig = field(default_factory=JobsConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -74,6 +83,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     api_security_data = _section(data, "api_security")
     vector_index_data = _section(data, "vector_index")
     jobs_data = _section(data, "jobs")
+    llm_data = _section(data, "llm")
 
     return AppConfig(
         retrieval=RetrievalConfig(
@@ -114,6 +124,16 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         jobs=JobsConfig(
             running_timeout_seconds=int(jobs_data.get("running_timeout_seconds", JobsConfig.running_timeout_seconds)),
             worker_poll_seconds=float(jobs_data.get("worker_poll_seconds", JobsConfig.worker_poll_seconds)),
+        ),
+        llm=LLMConfig(
+            provider=str(llm_data.get("provider", LLMConfig.provider)),
+            model=str(llm_data.get("model", LLMConfig.model)),
+            input_cost_per_1k_tokens=float(
+                llm_data.get("input_cost_per_1k_tokens", LLMConfig.input_cost_per_1k_tokens)
+            ),
+            output_cost_per_1k_tokens=float(
+                llm_data.get("output_cost_per_1k_tokens", LLMConfig.output_cost_per_1k_tokens)
+            ),
         ),
     )
 

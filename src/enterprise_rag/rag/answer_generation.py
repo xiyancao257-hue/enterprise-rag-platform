@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from enterprise_rag.llm.base import LLMClient
 from enterprise_rag.models import SearchHit
 from enterprise_rag.rag.prompts import GroundedQAPromptTemplate
 from enterprise_rag.text import tokenize
@@ -12,11 +13,6 @@ INSUFFICIENT_EVIDENCE_MESSAGE = "I could not find enough grounded context to ans
 class AnswerGenerator(Protocol):
     def generate(self, query: str, hits: list[SearchHit]) -> str:
         """Generate an answer from retrieved evidence."""
-
-
-class LLMClient(Protocol):
-    def complete(self, prompt: str) -> str:
-        """Return a model completion for the rendered prompt."""
 
 
 class EvidenceSufficiencyPolicy:

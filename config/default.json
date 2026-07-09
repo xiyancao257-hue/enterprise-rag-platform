@@ -24,5 +24,11 @@
   "jobs": {
     "running_timeout_seconds": 1800,
     "worker_poll_seconds": 5.0
+  },
+  "llm": {
+    "provider": "stub",
+    "model": "gpt-4.1-mini",
+    "input_cost_per_1k_tokens": 0.0,
+    "output_cost_per_1k_tokens": 0.0
   }
 }

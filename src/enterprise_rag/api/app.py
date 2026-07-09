@@ -21,6 +21,7 @@ from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InM
 from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.models import RagAnswer, SearchHit
+from enterprise_rag.observability.costs import LLMCostEstimator
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
@@ -76,6 +77,9 @@ class MetricsCollector:
         self.query_latency_ms_sum = 0.0
         self.query_latency_ms_count = 0
         self.query_citations_total = 0
+        self.query_estimated_input_tokens_total = 0
+        self.query_estimated_output_tokens_total = 0
+        self.query_estimated_cost_usd_sum = 0.0
         self.ingest_jobs_total = 0
         self.ingest_job_success_total = 0
         self.ingest_job_failures_total = 0
@@ -92,6 +96,11 @@ class MetricsCollector:
         self.query_latency_ms_sum += latency_ms
         self.query_latency_ms_count += 1
         self.query_citations_total += citation_count
+
+    def record_query_cost(self, input_tokens: int, output_tokens: int, estimated_cost_usd: float) -> None:
+        self.query_estimated_input_tokens_total += input_tokens
+        self.query_estimated_output_tokens_total += output_tokens
+        self.query_estimated_cost_usd_sum += estimated_cost_usd
 
     def record_query_failure(self) -> None:
         self.query_requests_total += 1
@@ -122,6 +131,9 @@ class MetricsCollector:
             "enterprise_rag_query_latency_ms_sum": round(self.query_latency_ms_sum, 4),
             "enterprise_rag_query_latency_ms_count": self.query_latency_ms_count,
             "enterprise_rag_query_citations_total": self.query_citations_total,
+            "enterprise_rag_query_estimated_input_tokens_total": self.query_estimated_input_tokens_total,
+            "enterprise_rag_query_estimated_output_tokens_total": self.query_estimated_output_tokens_total,
+            "enterprise_rag_query_estimated_cost_usd_sum": round(self.query_estimated_cost_usd_sum, 8),
             "enterprise_rag_ingest_jobs_total": self.ingest_jobs_total,
             "enterprise_rag_ingest_job_success_total": self.ingest_job_success_total,
             "enterprise_rag_ingest_job_failures_total": self.ingest_job_failures_total,
@@ -345,6 +357,15 @@ def create_app(
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
         app.state.metrics.record_query_success(latency_ms=latency_ms, citation_count=len(answer.citations))
+        cost = LLMCostEstimator(config.llm).estimate(
+            prompt=_cost_prompt_approximation(payload.query, answer.citations),
+            completion=answer.answer,
+        )
+        app.state.metrics.record_query_cost(
+            input_tokens=cost.input_tokens,
+            output_tokens=cost.output_tokens,
+            estimated_cost_usd=cost.estimated_cost_usd,
+        )
         _log_event(
             "query_completed",
             request_id=request.state.request_id,
@@ -355,6 +376,9 @@ def create_app(
             include_trace=payload.include_trace,
             vector_index_provider=config.vector_index.provider,
             tenant_id=tenant_id,
+            estimated_input_tokens=cost.input_tokens,
+            estimated_output_tokens=cost.output_tokens,
+            estimated_cost_usd=cost.estimated_cost_usd,
         )
         return _query_response(request.state.request_id, tenant_id, answer, trace if payload.include_trace else None)
 
@@ -493,6 +517,11 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),
     )
+
+
+def _cost_prompt_approximation(query: str, citations: tuple[SearchHit, ...]) -> str:
+    evidence = "\n".join(hit.chunk.text for hit in citations)
+    return f"{query}\n{evidence}"
 
 
 def _authorize_request(request: Request, config: AppConfig) -> AuthContext:
