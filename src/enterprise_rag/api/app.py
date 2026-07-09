@@ -112,6 +112,7 @@ class QueryTraceResponse(BaseModel):
     metadata_filters: dict[str, str]
     retrieved: list[TraceHitResponse]
     reranked: list[TraceHitResponse]
+    blocked_context: list[TraceHitResponse]
     final_context: list[TraceHitResponse]
 
 
@@ -214,6 +215,7 @@ def create_app(
             latency_ms=round(latency_ms, 2),
             top_k=top_k,
             citation_count=len(answer.citations),
+            blocked_context_count=len(trace.blocked_context),
             include_trace=payload.include_trace,
             vector_index_provider=config.vector_index.provider,
             tenant_id=tenant_id,
@@ -270,6 +272,7 @@ def _trace_response(trace: QueryTrace) -> QueryTraceResponse:
         metadata_filters=trace.metadata_filters,
         retrieved=[_trace_hit_response(hit) for hit in trace.retrieved],
         reranked=[_trace_hit_response(hit) for hit in trace.reranked],
+        blocked_context=[_trace_hit_response(hit) for hit in trace.blocked_context],
         final_context=[_trace_hit_response(hit) for hit in trace.final_context],
     )
 

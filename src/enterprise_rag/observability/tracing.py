@@ -22,9 +22,10 @@ class QueryTrace:
     normalized_query: str
     rewritten_queries: tuple[str, ...]
     metadata_filters: dict[str, str]
-    retrieved: tuple[TraceHit, ...]
-    reranked: tuple[TraceHit, ...]
-    final_context: tuple[TraceHit, ...]
+    retrieved: tuple[TraceHit, ...] = ()
+    reranked: tuple[TraceHit, ...] = ()
+    blocked_context: tuple[TraceHit, ...] = ()
+    final_context: tuple[TraceHit, ...] = ()
 
 
 def trace_hits(hits: list[SearchHit] | tuple[SearchHit, ...]) -> tuple[TraceHit, ...]:
@@ -58,6 +59,8 @@ def format_query_trace(trace: QueryTrace) -> str:
             _format_stage("Retrieved", trace.retrieved),
             "",
             _format_stage("Reranked", trace.reranked),
+            "",
+            _format_stage("Blocked context", trace.blocked_context),
             "",
             _format_stage("Final context", trace.final_context),
         ]

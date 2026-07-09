@@ -6,6 +6,7 @@ from enterprise_rag.observability.tracing import QueryTrace, trace_hits
 from enterprise_rag.query.engine import QueryEngine
 from enterprise_rag.rag.answer_generation import AnswerGenerator, DeterministicAnswerGenerator
 from enterprise_rag.rag.compression import ContextCompressor
+from enterprise_rag.rag.prompt_security import PromptInjectionDetector
 from enterprise_rag.reranking.base import Reranker
 from enterprise_rag.retrieval.graph import GraphRetriever
 from enterprise_rag.retrieval.hybrid import HybridRetriever
@@ -20,6 +21,7 @@ class RagPipeline:
         chunks: list[Chunk],
         answer_generator: AnswerGenerator | None = None,
         reranker: Reranker | None = None,
+        prompt_injection_detector: PromptInjectionDetector | None = None,
         enable_graph: bool = False,
         graph_max_hops: int = 2,
         vector_index: VectorIndex | None = None,
@@ -32,6 +34,7 @@ class RagPipeline:
         self.query_engine = QueryEngine(vocabulary=vocabulary)
         self.retriever = HybridRetriever(chunks, extra_retrievers=extra_retrievers, vector_index=vector_index)
         self.reranker = reranker or LightweightReranker()
+        self.prompt_injection_detector = prompt_injection_detector or PromptInjectionDetector()
         self.compressor = ContextCompressor()
         self.answer_generator = answer_generator or DeterministicAnswerGenerator()
 
@@ -61,7 +64,8 @@ class RagPipeline:
             user_groups=user_groups,
         )
         reranked = self.reranker.rerank(plan.normalized_query, retrieved, top_k=top_k)
-        compressed = self.compressor.compress(plan.normalized_query, reranked)
+        prompt_security = self.prompt_injection_detector.filter_hits(reranked)
+        compressed = self.compressor.compress(plan.normalized_query, prompt_security.safe_hits)
         answer_text = self.answer_generator.generate(plan.normalized_query, compressed)
         answer = RagAnswer(query=query, answer=answer_text, citations=tuple(compressed), query_plan=plan)
         trace = QueryTrace(
@@ -71,6 +75,7 @@ class RagPipeline:
             metadata_filters=metadata_filters,
             retrieved=trace_hits(retrieved),
             reranked=trace_hits(reranked),
+            blocked_context=trace_hits(prompt_security.blocked_hits),
             final_context=trace_hits(compressed),
         )
         return answer, trace

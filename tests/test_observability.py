@@ -40,6 +40,7 @@ def test_format_query_trace_includes_stage_summaries() -> None:
     assert "Trace" in formatted
     assert "Retrieved" in formatted
     assert "Reranked" in formatted
+    assert "Blocked context" in formatted
     assert "Final context" in formatted
     assert "chunk=policy" in formatted
     assert "Service Dependency Notes" in formatted
