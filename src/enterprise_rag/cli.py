@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 from enterprise_rag.config import load_config
@@ -54,6 +55,13 @@ def main() -> None:
     run_job_parser.add_argument("--jobs", type=Path, default=DEFAULT_JOBS)
     run_job_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     run_job_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
+
+    worker_parser = subparsers.add_parser("worker", help="Poll the persistent job store and run ingest jobs")
+    worker_parser.add_argument("--jobs", type=Path, default=DEFAULT_JOBS)
+    worker_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    worker_parser.add_argument("--config", type=Path, help="JSON config file for worker settings")
+    worker_parser.add_argument("--once", action="store_true", help="Run one polling pass and exit")
+    worker_parser.add_argument("--poll-seconds", type=float, default=None)
 
     query_parser = subparsers.add_parser("query", help="Query the local RAG index")
     query_parser.add_argument("query")
@@ -158,6 +166,8 @@ def main() -> None:
         ingest(args.path, args.index, args.config, args.sync_vectors)
     elif args.command == "run-job":
         run_job(args.job_id, args.jobs, args.index, args.config)
+    elif args.command == "worker":
+        worker(args.jobs, args.index, args.config, args.once, args.poll_seconds)
     elif args.command == "query":
         config = load_config(args.config)
         top_k = args.top_k if args.top_k is not None else config.retrieval.top_k
@@ -262,6 +272,28 @@ def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | 
         )
     if job.error is not None:
         print(f"Error: {job.error}")
+
+
+def worker(
+    jobs_path: Path,
+    index_path: Path,
+    config_path: Path | None = None,
+    once: bool = False,
+    poll_seconds: float | None = None,
+) -> None:
+    config = load_config(config_path)
+    interval = poll_seconds if poll_seconds is not None else config.jobs.worker_poll_seconds
+    job_store = JsonIngestJobStore(jobs_path)
+    runner = IngestJobRunner(job_store=job_store, index_path=index_path, config=config)
+
+    while True:
+        jobs = job_store.list()
+        for job in jobs:
+            runner.run(job.job_id)
+        print(f"Worker scanned {len(jobs)} jobs from {jobs_path}")
+        if once:
+            return
+        time.sleep(interval)
 
 
 def query(

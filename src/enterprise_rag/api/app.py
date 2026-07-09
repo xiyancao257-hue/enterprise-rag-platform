@@ -77,7 +77,12 @@ class MetricsCollector:
         self.query_latency_ms_count = 0
         self.query_citations_total = 0
         self.ingest_jobs_total = 0
+        self.ingest_job_success_total = 0
         self.ingest_job_failures_total = 0
+        self.ingest_job_skipped_total = 0
+        self.ingest_job_retry_exhausted_total = 0
+        self.ingest_job_latency_ms_sum = 0.0
+        self.ingest_job_latency_ms_count = 0
 
     def record_http_request(self) -> None:
         self.http_requests_total += 1
@@ -95,8 +100,19 @@ class MetricsCollector:
     def record_ingest_job_created(self) -> None:
         self.ingest_jobs_total += 1
 
+    def record_ingest_job_success(self, latency_ms: float) -> None:
+        self.ingest_job_success_total += 1
+        self.ingest_job_latency_ms_sum += latency_ms
+        self.ingest_job_latency_ms_count += 1
+
     def record_ingest_job_failure(self) -> None:
         self.ingest_job_failures_total += 1
+
+    def record_ingest_job_skip(self, reason: str) -> None:
+        self.ingest_job_skipped_total += 1
+
+    def record_ingest_job_retry_exhausted(self) -> None:
+        self.ingest_job_retry_exhausted_total += 1
 
     def render_prometheus(self) -> str:
         metrics = {
@@ -107,7 +123,12 @@ class MetricsCollector:
             "enterprise_rag_query_latency_ms_count": self.query_latency_ms_count,
             "enterprise_rag_query_citations_total": self.query_citations_total,
             "enterprise_rag_ingest_jobs_total": self.ingest_jobs_total,
+            "enterprise_rag_ingest_job_success_total": self.ingest_job_success_total,
             "enterprise_rag_ingest_job_failures_total": self.ingest_job_failures_total,
+            "enterprise_rag_ingest_job_skipped_total": self.ingest_job_skipped_total,
+            "enterprise_rag_ingest_job_retry_exhausted_total": self.ingest_job_retry_exhausted_total,
+            "enterprise_rag_ingest_job_latency_ms_sum": round(self.ingest_job_latency_ms_sum, 4),
+            "enterprise_rag_ingest_job_latency_ms_count": self.ingest_job_latency_ms_count,
         }
         return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
 
@@ -200,6 +221,8 @@ class IngestJobResponse(BaseModel):
     source_path: str
     tenant_id: str | None = None
     sync_vectors: bool
+    attempt_count: int
+    max_attempts: int
     report: IngestReportResponse | None = None
     vector_sync: dict[str, int] | None = None
     error: str | None = None
@@ -229,6 +252,9 @@ def create_app(
         index_path=index_path,
         config=config,
         record_failure=app.state.metrics.record_ingest_job_failure,
+        record_success=app.state.metrics.record_ingest_job_success,
+        record_skip=app.state.metrics.record_ingest_job_skip,
+        record_retry_exhausted=app.state.metrics.record_ingest_job_retry_exhausted,
         log_event=_log_event,
     )
     app.state.ingest_job_queue_factory = ingest_job_queue_factory or FastApiBackgroundTaskQueue
@@ -447,6 +473,8 @@ def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResp
         source_path=job.source_path,
         tenant_id=job.tenant_id,
         sync_vectors=job.sync_vectors,
+        attempt_count=job.attempt_count,
+        max_attempts=job.max_attempts,
         report=_ingest_report_response(job.report) if job.report is not None else None,
         vector_sync=job.vector_sync,
         error=job.error,

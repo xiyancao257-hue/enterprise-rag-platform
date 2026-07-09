@@ -692,6 +692,8 @@ def test_ingest_job_indexes_documents_and_records_status(tmp_path) -> None:
     chunks = JsonChunkStore(index_path).load()
     assert status_response.status_code == 200
     assert payload["status"] == "succeeded"
+    assert payload["attempt_count"] == 1
+    assert payload["max_attempts"] == 3
     assert payload["report"]["documents_new"] == 1
     assert payload["report"]["chunks_indexed"] == 1
     assert chunks[0].metadata["source_path"] == str(source)
@@ -835,6 +837,23 @@ def test_ingest_job_api_publishes_created_job_to_queue(tmp_path) -> None:
 
     assert response.status_code == 202
     assert published == [response.json()["job_id"]]
+
+
+def test_metrics_reports_ingest_job_success_counts(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(index_path=tmp_path / "chunks.json"))
+
+    client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    metrics = client.get("/metrics").text
+
+    assert "enterprise_rag_ingest_jobs_total 1" in metrics
+    assert "enterprise_rag_ingest_job_success_total 1" in metrics
+    assert "enterprise_rag_ingest_job_latency_ms_count 1" in metrics
 
 
 def _hash_test_key(api_key: str) -> str:

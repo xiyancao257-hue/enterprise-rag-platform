@@ -15,6 +15,23 @@ services:
     ports:
       - "8000:8000"
 
+  worker:
+    build:
+      context: .
+    image: enterprise-rag:local
+    working_dir: /app
+    command:
+      [
+        "enterprise-rag",
+        "worker",
+        "--jobs",
+        "data/jobs/ingest_jobs.json",
+        "--index",
+        "data/processed/chunks.json",
+        "--config",
+        "config/default.json",
+      ]
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:

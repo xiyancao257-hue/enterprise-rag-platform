@@ -35,6 +35,9 @@ class IngestJobStore(Protocol):
     def get(self, job_id: str) -> IngestJobRecord | None:
         """Read one ingest job."""
 
+    def list(self) -> list[IngestJobRecord]:
+        """List ingest jobs."""
+
     def mark_running(self, job_id: str) -> None:
         """Mark an ingest job as running."""
 
@@ -62,6 +65,9 @@ class InMemoryIngestJobStore:
 
     def get(self, job_id: str) -> IngestJobRecord | None:
         return self.jobs.get(job_id)
+
+    def list(self) -> list[IngestJobRecord]:
+        return list(self.jobs.values())
 
     def mark_running(self, job_id: str) -> None:
         job = self.jobs[job_id]
@@ -99,6 +105,9 @@ class JsonIngestJobStore:
 
     def get(self, job_id: str) -> IngestJobRecord | None:
         return self._load().get(job_id)
+
+    def list(self) -> list[IngestJobRecord]:
+        return list(self._load().values())
 
     def mark_running(self, job_id: str) -> None:
         jobs = self._load()

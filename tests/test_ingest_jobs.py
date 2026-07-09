@@ -26,6 +26,16 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
     assert reloaded.created_at == 100.0
 
 
+def test_json_ingest_job_store_lists_jobs(tmp_path: Path) -> None:
+    store = JsonIngestJobStore(tmp_path / "jobs" / "ingest_jobs.json")
+    first = store.create("data/a", tenant_id="acme", sync_vectors=False, request_id="req_1")
+    second = store.create("data/b", tenant_id="globex", sync_vectors=True, request_id="req_2")
+
+    jobs = store.list()
+
+    assert {job.job_id for job in jobs} == {first.job_id, second.job_id}
+
+
 def test_json_ingest_job_store_persists_status_updates(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs" / "ingest_jobs.json"
     clock = iter([100.0, 101.0, 102.0])

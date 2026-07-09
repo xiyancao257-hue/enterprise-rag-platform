@@ -70,3 +70,24 @@ def test_run_job_cli_executes_persisted_ingest_job(tmp_path: Path, capsys: objec
 def test_run_job_cli_exits_when_job_is_missing(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="No ingest job found"):
         cli.run_job("job_missing", tmp_path / "jobs.json", tmp_path / "chunks.json")
+
+
+def test_worker_cli_runs_one_polling_pass(tmp_path: Path, capsys: object) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    jobs_path = tmp_path / "jobs" / "ingest_jobs.json"
+    index_path = tmp_path / "chunks.json"
+    job_store = JsonIngestJobStore(jobs_path)
+    job = job_store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
+
+    cli.worker(jobs_path, index_path, once=True)
+
+    output = capsys.readouterr().out
+    finished = JsonIngestJobStore(jobs_path).get(job.job_id)
+    assert finished is not None
+    assert finished.status == "succeeded"
+    assert "Worker scanned 1 jobs" in output

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from enterprise_rag.config import AppConfig
+from enterprise_rag.config import AppConfig, JobsConfig
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import InMemoryIngestJobStore
 from enterprise_rag.jobs.runner import IngestJobRunner
@@ -108,6 +108,7 @@ def test_ingest_job_runner_skips_succeeded_job_duplicate_delivery(tmp_path: Path
                 "tenant_id": None,
                 "status": "succeeded",
                 "attempt_count": 0,
+                "reason": "succeeded",
             },
         )
     ]
@@ -138,6 +139,30 @@ def test_ingest_job_runner_skips_running_job_duplicate_delivery(tmp_path: Path) 
     assert events[0][0] == "ingest_job_skipped"
     assert events[0][1]["status"] == "running"
     assert events[0][1]["attempt_count"] == 1
+
+
+def test_ingest_job_runner_recovers_stale_running_job(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = InMemoryIngestJobStore(now=lambda: 100.0)
+    job = store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
+    store.mark_running(job.job_id)
+
+    IngestJobRunner(
+        job_store=store,
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(jobs=JobsConfig(running_timeout_seconds=60)),
+        now=lambda: 200.0,
+    ).run(job.job_id)
+
+    recovered = store.get(job.job_id)
+    assert recovered is not None
+    assert recovered.status == "succeeded"
+    assert recovered.attempt_count == 2
 
 
 def test_ingest_job_runner_allows_failed_job_retry(tmp_path: Path) -> None:

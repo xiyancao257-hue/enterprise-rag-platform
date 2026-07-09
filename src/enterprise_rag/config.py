@@ -43,11 +43,18 @@ class VectorIndexConfig:
 
 
 @dataclass(frozen=True)
+class JobsConfig:
+    running_timeout_seconds: int = 1800
+    worker_poll_seconds: float = 5.0
+
+
+@dataclass(frozen=True)
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     api_security: ApiSecurityConfig = field(default_factory=ApiSecurityConfig)
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
+    jobs: JobsConfig = field(default_factory=JobsConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -66,6 +73,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     security_data = _section(data, "security")
     api_security_data = _section(data, "api_security")
     vector_index_data = _section(data, "vector_index")
+    jobs_data = _section(data, "jobs")
 
     return AppConfig(
         retrieval=RetrievalConfig(
@@ -102,6 +110,10 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             provider=str(vector_index_data.get("provider", VectorIndexConfig.provider)),
             collection_name=str(vector_index_data.get("collection_name", VectorIndexConfig.collection_name)),
             url=str(vector_index_data.get("url", VectorIndexConfig.url)),
+        ),
+        jobs=JobsConfig(
+            running_timeout_seconds=int(jobs_data.get("running_timeout_seconds", JobsConfig.running_timeout_seconds)),
+            worker_poll_seconds=float(jobs_data.get("worker_poll_seconds", JobsConfig.worker_poll_seconds)),
         ),
     )
 

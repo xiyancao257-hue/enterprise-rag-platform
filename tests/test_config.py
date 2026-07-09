@@ -42,6 +42,10 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "collection_name": "chunks",
                 "url": "http://qdrant:6333",
             },
+            "jobs": {
+                "running_timeout_seconds": 900,
+                "worker_poll_seconds": 2.5,
+            },
         }
     )
 
@@ -60,6 +64,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.vector_index.provider == "qdrant"
     assert config.vector_index.collection_name == "chunks"
     assert config.vector_index.url == "http://qdrant:6333"
+    assert config.jobs.running_timeout_seconds == 900
+    assert config.jobs.worker_poll_seconds == 2.5
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

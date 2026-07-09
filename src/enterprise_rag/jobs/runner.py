@@ -7,7 +7,7 @@ from pathlib import Path
 from enterprise_rag.config import AppConfig
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
-from enterprise_rag.jobs.ingest_jobs import IngestJobStore
+from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -21,19 +21,31 @@ class IngestJobRunner:
         index_path: Path,
         config: AppConfig,
         record_failure: Callable[[], None] | None = None,
+        record_success: Callable[[float], None] | None = None,
+        record_skip: Callable[[str], None] | None = None,
+        record_retry_exhausted: Callable[[], None] | None = None,
         log_event: Callable[..., None] | None = None,
+        now: Callable[[], float] | None = None,
     ) -> None:
         self.job_store = job_store
         self.index_path = index_path
         self.config = config
         self.record_failure = record_failure or (lambda: None)
+        self.record_success = record_success or (lambda latency_ms: None)
+        self.record_skip = record_skip or (lambda reason: None)
+        self.record_retry_exhausted = record_retry_exhausted or (lambda: None)
         self.log_event = log_event or (lambda event, **fields: None)
+        self.now = now or time.time
 
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
         if job is None:
             return
-        if job.status == "failed" and job.attempt_count >= job.max_attempts:
+        if job.status == "running" and not self._is_stale_running(job):
+            self._skip_job(job, reason="running")
+            return
+        if job.status in {"failed", "running"} and job.attempt_count >= job.max_attempts:
+            self.record_retry_exhausted()
             self.log_event(
                 "ingest_job_retry_exhausted",
                 request_id=job.request_id,
@@ -44,15 +56,8 @@ class IngestJobRunner:
                 max_attempts=job.max_attempts,
             )
             return
-        if job.status not in self.RUNNABLE_STATUSES:
-            self.log_event(
-                "ingest_job_skipped",
-                request_id=job.request_id,
-                job_id=job.job_id,
-                tenant_id=job.tenant_id,
-                status=job.status,
-                attempt_count=job.attempt_count,
-            )
+        if job.status not in self.RUNNABLE_STATUSES and job.status != "running":
+            self._skip_job(job, reason=job.status)
             return
 
         self.job_store.mark_running(job_id)
@@ -79,13 +84,15 @@ class IngestJobRunner:
                     "vectors_deleted": sync_report.vectors_deleted,
                 }
             self.job_store.mark_succeeded(job_id, report=report, vector_sync=vector_sync)
+            latency_ms = (time.perf_counter() - started_at) * 1000
+            self.record_success(latency_ms)
             self.log_event(
                 "ingest_job_completed",
                 request_id=job.request_id,
                 job_id=job.job_id,
                 tenant_id=job.tenant_id,
                 chunks_indexed=report.chunks_indexed,
-                latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                latency_ms=round(latency_ms, 2),
             )
         except Exception as exc:
             self.record_failure()
@@ -103,3 +110,18 @@ class IngestJobRunner:
         if tenant_id is None:
             return {}
         return {"tenant_id": tenant_id}
+
+    def _is_stale_running(self, job: IngestJobRecord) -> bool:
+        return self.now() - job.updated_at >= self.config.jobs.running_timeout_seconds
+
+    def _skip_job(self, job: IngestJobRecord, reason: str) -> None:
+        self.record_skip(reason)
+        self.log_event(
+            "ingest_job_skipped",
+            request_id=job.request_id,
+            job_id=job.job_id,
+            tenant_id=job.tenant_id,
+            status=job.status,
+            attempt_count=job.attempt_count,
+            reason=reason,
+        )
