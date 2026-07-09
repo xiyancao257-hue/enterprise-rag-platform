@@ -24,6 +24,8 @@ from enterprise_rag.evaluation.self_healing_workflow import (
 )
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
+from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
+from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
 from enterprise_rag.observability.query_logging import QueryLogger, build_query_log_record
 from enterprise_rag.observability.tracing import format_query_trace
@@ -34,6 +36,7 @@ from enterprise_rag.vector_index.base import VectorIndex
 from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
+DEFAULT_JOBS = Path("data/jobs/ingest_jobs.json")
 
 
 def main() -> None:
@@ -45,6 +48,12 @@ def main() -> None:
     ingest_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     ingest_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
     ingest_parser.add_argument("--sync-vectors", action="store_true", help="Sync changed chunks to the vector index")
+
+    run_job_parser = subparsers.add_parser("run-job", help="Run one queued ingest job from the persistent job store")
+    run_job_parser.add_argument("job_id")
+    run_job_parser.add_argument("--jobs", type=Path, default=DEFAULT_JOBS)
+    run_job_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    run_job_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
 
     query_parser = subparsers.add_parser("query", help="Query the local RAG index")
     query_parser.add_argument("query")
@@ -147,6 +156,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "ingest":
         ingest(args.path, args.index, args.config, args.sync_vectors)
+    elif args.command == "run-job":
+        run_job(args.job_id, args.jobs, args.index, args.config)
     elif args.command == "query":
         config = load_config(args.config)
         top_k = args.top_k if args.top_k is not None else config.retrieval.top_k
@@ -216,6 +227,41 @@ def ingest(path: Path, index_path: Path, config_path: Path | None = None, sync_v
             chunk_ids_to_delete=list(report.chunks_deleted),
         )
         print(f"Vector sync report: upserted={sync_report.vectors_upserted}, deleted={sync_report.vectors_deleted}")
+
+
+def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | None = None) -> None:
+    job_store = JsonIngestJobStore(jobs_path)
+    if job_store.get(job_id) is None:
+        raise SystemExit(f"No ingest job found for {job_id} in {jobs_path}")
+
+    runner = IngestJobRunner(
+        job_store=job_store,
+        index_path=index_path,
+        config=load_config(config_path),
+    )
+    runner.run(job_id)
+    job = job_store.get(job_id)
+    if job is None:
+        raise SystemExit(f"Ingest job disappeared while running: {job_id}")
+    print(f"Job {job.job_id} {job.status}")
+    if job.report is not None:
+        print(
+            "Ingest report: "
+            f"new={job.report.documents_new}, "
+            f"updated={job.report.documents_updated}, "
+            f"unchanged={job.report.documents_unchanged}, "
+            f"deleted={job.report.documents_deleted}, "
+            f"filtered={job.report.documents_filtered}, "
+            f"chunks={job.report.chunks_indexed}"
+        )
+    if job.vector_sync is not None:
+        print(
+            "Vector sync report: "
+            f"upserted={job.vector_sync.get('vectors_upserted', 0)}, "
+            f"deleted={job.vector_sync.get('vectors_deleted', 0)}"
+        )
+    if job.error is not None:
+        print(f"Error: {job.error}")
 
 
 def query(
