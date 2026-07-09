@@ -6,6 +6,7 @@ from enterprise_rag.models import BlockType, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
+from enterprise_rag.processing.redaction import SensitiveDataRedactor
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -53,6 +54,29 @@ def test_cleaner_removes_repeated_lines() -> None:
     assert "Hybrid retrieval combines BM25" in cleaned.text
     assert "Confidential" not in cleaned.text
     assert cleaned.metadata["cleaned"] == "true"
+
+
+def test_redactor_masks_sensitive_values_before_indexing() -> None:
+    document = Document(
+        id="doc1",
+        source_path="incident.md",
+        text=(
+            "Contact alice@example.com or 415-555-0100. "
+            "SSN 123-45-6789. "
+            "Use api_key=abc123456789 and sk-testsecret123456."
+        ),
+    )
+
+    redacted = SensitiveDataRedactor().redact(document)
+
+    assert "alice@example.com" not in redacted.text
+    assert "415-555-0100" not in redacted.text
+    assert "123-45-6789" not in redacted.text
+    assert "abc123456789" not in redacted.text
+    assert "sk-testsecret123456" not in redacted.text
+    assert "[REDACTED_EMAIL]" in redacted.text
+    assert redacted.metadata["redacted"] == "true"
+    assert "email" in redacted.metadata["redaction_types"]
 
 
 def test_parser_preserves_heading_path_and_tables() -> None:
@@ -210,3 +234,24 @@ def test_incremental_ingest_keeps_same_source_path_separate_by_tenant(tmp_path: 
     assert report.documents_new == 1
     assert len(chunks) == 2
     assert {chunk.metadata["tenant_id"] for chunk in chunks} == {"acme", "globex"}
+
+
+def test_incremental_ingest_redacts_sensitive_values_in_chunks(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "incident.md"
+    source.write_text(
+        "# Incident\n\nContact alice@example.com with api_key=abc123456789 for hybrid retrieval review.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline().run(raw_dir, store)
+    chunks = store.load()
+
+    assert report.documents_new == 1
+    assert "alice@example.com" not in chunks[0].text
+    assert "abc123456789" not in chunks[0].text
+    assert "[REDACTED_EMAIL]" in chunks[0].text
+    assert chunks[0].metadata["redacted"] == "true"
+    assert "api_token" in chunks[0].metadata["redaction_types"]

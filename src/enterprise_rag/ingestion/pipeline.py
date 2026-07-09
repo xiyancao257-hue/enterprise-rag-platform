@@ -8,6 +8,7 @@ from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
+from enterprise_rag.processing.redaction import SensitiveDataRedactor
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -28,10 +29,12 @@ class IncrementalIngestPipeline:
     def __init__(
         self,
         cleaner: DirtyDataCleaner | None = None,
+        redactor: SensitiveDataRedactor | None = None,
         parser: StructureParser | None = None,
         chunker: StructureAwareChunker | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
+        self.redactor = redactor or SensitiveDataRedactor()
         self.parser = parser or StructureParser()
         self.chunker = chunker or StructureAwareChunker()
 
@@ -106,7 +109,8 @@ class IncrementalIngestPipeline:
         cleaned = self.cleaner.clean(document)
         if cleaned is None:
             return []
-        blocks = self.parser.parse(cleaned)
+        redacted = self.redactor.redact(cleaned)
+        blocks = self.parser.parse(redacted)
         return self.chunker.chunk(blocks)
 
     def _group_by_source(self, chunks: list[Chunk]) -> dict[str, list[Chunk]]:
