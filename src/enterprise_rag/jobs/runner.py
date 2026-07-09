@@ -13,6 +13,8 @@ from enterprise_rag.vector_index.factory import create_vector_index
 
 
 class IngestJobRunner:
+    RUNNABLE_STATUSES = {"queued", "failed"}
+
     def __init__(
         self,
         job_store: IngestJobStore,
@@ -30,6 +32,15 @@ class IngestJobRunner:
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
         if job is None:
+            return
+        if job.status not in self.RUNNABLE_STATUSES:
+            self.log_event(
+                "ingest_job_skipped",
+                request_id=job.request_id,
+                job_id=job.job_id,
+                tenant_id=job.tenant_id,
+                status=job.status,
+            )
             return
 
         self.job_store.mark_running(job_id)
