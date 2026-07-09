@@ -49,6 +49,7 @@ def main() -> None:
     ingest_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     ingest_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
     ingest_parser.add_argument("--sync-vectors", action="store_true", help="Sync changed chunks to the vector index")
+    ingest_parser.add_argument("--allowed-group", action="append", default=None, help="Allowed group for ingested docs")
 
     run_job_parser = subparsers.add_parser("run-job", help="Run one queued ingest job from the persistent job store")
     run_job_parser.add_argument("job_id")
@@ -163,7 +164,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "ingest":
-        ingest(args.path, args.index, args.config, args.sync_vectors)
+        ingest(args.path, args.index, args.config, args.sync_vectors, tuple(args.allowed_group or ()))
     elif args.command == "run-job":
         run_job(args.job_id, args.jobs, args.index, args.config)
     elif args.command == "worker":
@@ -215,9 +216,16 @@ def main() -> None:
         readiness_report(args.index, args.eval_path, args.query_log, args.self_healing_dir, args.k)
 
 
-def ingest(path: Path, index_path: Path, config_path: Path | None = None, sync_vectors: bool = False) -> None:
+def ingest(
+    path: Path,
+    index_path: Path,
+    config_path: Path | None = None,
+    sync_vectors: bool = False,
+    allowed_groups: tuple[str, ...] = (),
+) -> None:
     store = JsonChunkStore(index_path)
-    report = IncrementalIngestPipeline().run(path, store)
+    metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
+    report = IncrementalIngestPipeline().run(path, store, metadata_overrides=metadata_overrides)
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
     print(
         "Ingest report: "

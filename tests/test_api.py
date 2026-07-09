@@ -727,13 +727,15 @@ def test_ingest_job_applies_tenant_metadata_from_header(tmp_path) -> None:
     response = client.post(
         "/ingest-jobs",
         headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
-        json={"source_path": str(raw_dir)},
+        json={"source_path": str(raw_dir), "allowed_groups": ["legal", "security"]},
     )
 
     chunks = JsonChunkStore(index_path).load()
     assert response.status_code == 202
     assert response.json()["tenant_id"] == "acme"
+    assert response.json()["allowed_groups"] == ["legal", "security"]
     assert chunks[0].metadata["tenant_id"] == "acme"
+    assert chunks[0].metadata["allowed_groups"] == "legal,security"
     assert chunks[0].metadata["source_path"] == str(source)
 
 

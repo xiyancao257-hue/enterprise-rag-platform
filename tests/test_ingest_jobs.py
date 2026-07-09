@@ -13,6 +13,7 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
         tenant_id="acme",
         sync_vectors=True,
         request_id="req_123",
+        allowed_groups=("legal", "security"),
     )
     reloaded = JsonIngestJobStore(store_path).get(job.job_id)
 
@@ -20,6 +21,7 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
     assert reloaded.status == "queued"
     assert reloaded.source_path == "data/raw"
     assert reloaded.tenant_id == "acme"
+    assert reloaded.allowed_groups == ("legal", "security")
     assert reloaded.sync_vectors is True
     assert reloaded.attempt_count == 0
     assert reloaded.max_attempts == 3

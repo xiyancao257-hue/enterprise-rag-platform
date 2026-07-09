@@ -155,6 +155,7 @@ class QueryRequest(BaseModel):
 class IngestJobRequest(BaseModel):
     source_path: str = Field(min_length=1)
     sync_vectors: bool = False
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class QueryPlanResponse(BaseModel):
@@ -232,6 +233,7 @@ class IngestJobResponse(BaseModel):
     status: str
     source_path: str
     tenant_id: str | None = None
+    allowed_groups: list[str]
     sync_vectors: bool
     attempt_count: int
     max_attempts: int
@@ -397,6 +399,7 @@ def create_app(
         job = app.state.ingest_jobs.create(
             source_path=str(source_path),
             tenant_id=tenant_id,
+            allowed_groups=tuple(payload.allowed_groups),
             sync_vectors=payload.sync_vectors,
             request_id=request.state.request_id,
         )
@@ -496,6 +499,7 @@ def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResp
         status=job.status,
         source_path=job.source_path,
         tenant_id=job.tenant_id,
+        allowed_groups=list(job.allowed_groups),
         sync_vectors=job.sync_vectors,
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,

@@ -16,7 +16,13 @@ def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path
     )
     index_path = tmp_path / "chunks.json"
     store = InMemoryIngestJobStore()
-    job = store.create(str(raw_dir), tenant_id="acme", sync_vectors=False, request_id="req_123")
+    job = store.create(
+        str(raw_dir),
+        tenant_id="acme",
+        sync_vectors=False,
+        request_id="req_123",
+        allowed_groups=("legal", "security"),
+    )
     events = []
 
     IngestJobRunner(
@@ -33,6 +39,7 @@ def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path
     assert finished.report is not None
     assert finished.report.documents_new == 1
     assert chunks[0].metadata["tenant_id"] == "acme"
+    assert chunks[0].metadata["allowed_groups"] == "legal,security"
     assert events[0][0] == "ingest_job_completed"
 
 

@@ -34,10 +34,12 @@ def test_ingest_cli_can_sync_changed_chunks_to_vector_index(
     monkeypatch.setattr(cli, "create_vector_index", lambda config: fake_vector_index)
     monkeypatch.setattr(cli, "VectorIndexSync", RecordingVectorSync)
 
-    cli.ingest(raw_dir, index_path, sync_vectors=True)
+    cli.ingest(raw_dir, index_path, sync_vectors=True, allowed_groups=("security",))
 
     output = capsys.readouterr().out
+    chunks = JsonChunkStore(index_path).load()
     assert "Vector sync report: upserted=1, deleted=0" in output
+    assert chunks[0].metadata["allowed_groups"] == "security"
     assert RecordingVectorSync.calls[0][0] is fake_vector_index
     assert len(RecordingVectorSync.calls[0][1]) == 1
     assert RecordingVectorSync.calls[0][2] == []

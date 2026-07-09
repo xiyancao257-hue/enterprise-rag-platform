@@ -63,7 +63,7 @@ class IngestJobRunner:
         self.job_store.mark_running(job_id)
         started_at = time.perf_counter()
         try:
-            metadata_overrides = self._tenant_metadata_filter(job.tenant_id)
+            metadata_overrides = self._metadata_overrides(job)
             store = JsonChunkStore(self.index_path)
             report = IncrementalIngestPipeline().run(
                 Path(job.source_path),
@@ -110,6 +110,12 @@ class IngestJobRunner:
         if tenant_id is None:
             return {}
         return {"tenant_id": tenant_id}
+
+    def _metadata_overrides(self, job: IngestJobRecord) -> dict[str, str]:
+        metadata = self._tenant_metadata_filter(job.tenant_id)
+        if job.allowed_groups:
+            metadata["allowed_groups"] = ",".join(job.allowed_groups)
+        return metadata
 
     def _is_stale_running(self, job: IngestJobRecord) -> bool:
         return self.now() - job.updated_at >= self.config.jobs.running_timeout_seconds

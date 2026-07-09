@@ -17,6 +17,7 @@ class IngestJobRecord:
     status: str
     source_path: str
     tenant_id: str | None
+    allowed_groups: tuple[str, ...]
     sync_vectors: bool
     request_id: str
     created_at: float
@@ -29,7 +30,14 @@ class IngestJobRecord:
 
 
 class IngestJobStore(Protocol):
-    def create(self, source_path: str, tenant_id: str | None, sync_vectors: bool, request_id: str) -> IngestJobRecord:
+    def create(
+        self,
+        source_path: str,
+        tenant_id: str | None,
+        sync_vectors: bool,
+        request_id: str,
+        allowed_groups: tuple[str, ...] = (),
+    ) -> IngestJobRecord:
         """Create a queued ingest job."""
 
     def get(self, job_id: str) -> IngestJobRecord | None:
@@ -58,8 +66,15 @@ class InMemoryIngestJobStore:
         self.now = now or time.time
         self.jobs: dict[str, IngestJobRecord] = {}
 
-    def create(self, source_path: str, tenant_id: str | None, sync_vectors: bool, request_id: str) -> IngestJobRecord:
-        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now())
+    def create(
+        self,
+        source_path: str,
+        tenant_id: str | None,
+        sync_vectors: bool,
+        request_id: str,
+        allowed_groups: tuple[str, ...] = (),
+    ) -> IngestJobRecord:
+        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now(), allowed_groups=allowed_groups)
         self.jobs[job.job_id] = job
         return job
 
@@ -96,9 +111,16 @@ class JsonIngestJobStore:
         self.path = path
         self.now = now or time.time
 
-    def create(self, source_path: str, tenant_id: str | None, sync_vectors: bool, request_id: str) -> IngestJobRecord:
+    def create(
+        self,
+        source_path: str,
+        tenant_id: str | None,
+        sync_vectors: bool,
+        request_id: str,
+        allowed_groups: tuple[str, ...] = (),
+    ) -> IngestJobRecord:
         jobs = self._load()
-        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now())
+        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now(), allowed_groups=allowed_groups)
         jobs[job.job_id] = job
         self._save(jobs)
         return job
@@ -152,12 +174,14 @@ def _new_job(
     sync_vectors: bool,
     request_id: str,
     now: float,
+    allowed_groups: tuple[str, ...] = (),
 ) -> IngestJobRecord:
     return IngestJobRecord(
         job_id=f"job_{uuid4().hex}",
         status="queued",
         source_path=source_path,
         tenant_id=tenant_id,
+        allowed_groups=allowed_groups,
         sync_vectors=sync_vectors,
         request_id=request_id,
         created_at=now,
@@ -186,6 +210,7 @@ def _job_from_dict(item: dict[str, object]) -> IngestJobRecord:
         status=str(item["status"]),
         source_path=str(item["source_path"]),
         tenant_id=str(item["tenant_id"]) if item.get("tenant_id") is not None else None,
+        allowed_groups=tuple(str(group) for group in item.get("allowed_groups", ())),
         sync_vectors=bool(item["sync_vectors"]),
         request_id=str(item["request_id"]),
         created_at=float(item["created_at"]),
