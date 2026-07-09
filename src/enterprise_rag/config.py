@@ -20,6 +20,13 @@ class SecurityConfig:
 
 
 @dataclass(frozen=True)
+class ApiSecurityConfig:
+    require_api_key: bool = False
+    api_key_env_var: str = "ENTERPRISE_RAG_API_KEYS"
+    api_key_hashes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class VectorIndexConfig:
     provider: str = "memory"
     collection_name: str = "enterprise_rag_chunks"
@@ -30,6 +37,7 @@ class VectorIndexConfig:
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    api_security: ApiSecurityConfig = field(default_factory=ApiSecurityConfig)
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
 
 
@@ -47,6 +55,7 @@ def load_config(path: Path | None = None) -> AppConfig:
 def parse_config(data: dict[str, Any]) -> AppConfig:
     retrieval_data = _section(data, "retrieval")
     security_data = _section(data, "security")
+    api_security_data = _section(data, "api_security")
     vector_index_data = _section(data, "vector_index")
 
     return AppConfig(
@@ -64,6 +73,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         ),
         security=SecurityConfig(
             default_user_groups=tuple(str(group) for group in security_data.get("default_user_groups", ())),
+        ),
+        api_security=ApiSecurityConfig(
+            require_api_key=bool(api_security_data.get("require_api_key", ApiSecurityConfig.require_api_key)),
+            api_key_env_var=str(api_security_data.get("api_key_env_var", ApiSecurityConfig.api_key_env_var)),
+            api_key_hashes=tuple(str(value) for value in api_security_data.get("api_key_hashes", ())),
         ),
         vector_index=VectorIndexConfig(
             provider=str(vector_index_data.get("provider", VectorIndexConfig.provider)),

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
+from hashlib import sha256
+from hmac import compare_digest
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +23,7 @@ from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
 REQUEST_ID_HEADER = "X-Request-ID"
+API_KEY_HEADER = "X-API-Key"
 logger = logging.getLogger("enterprise_rag.api")
 
 
@@ -119,8 +123,12 @@ class HealthResponse(BaseModel):
     vector_index_provider: str
 
 
-def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None) -> FastAPI:
-    config = load_config(config_path)
+def create_app(
+    index_path: Path = DEFAULT_INDEX,
+    config_path: Path | None = None,
+    config: AppConfig | None = None,
+) -> FastAPI:
+    config = config or load_config(config_path)
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
     app.state.index_path = index_path
     app.state.config = config
@@ -146,7 +154,8 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
         return response
 
     @app.get("/metrics", response_class=PlainTextResponse)
-    def metrics() -> str:
+    def metrics(request: Request) -> str:
+        _authorize_request(request, app.state.config)
         return app.state.metrics.render_prometheus()
 
     @app.get("/health", response_model=HealthResponse)
@@ -161,6 +170,7 @@ def create_app(index_path: Path = DEFAULT_INDEX, config_path: Path | None = None
 
     @app.post("/query", response_model=QueryResponse)
     def query(payload: QueryRequest, request: Request) -> QueryResponse:
+        _authorize_request(request, app.state.config)
         started_at = time.perf_counter()
         chunks = JsonChunkStore(app.state.index_path).load()
         if not chunks:
@@ -261,6 +271,53 @@ def _trace_hit_response(hit: TraceHit) -> TraceHitResponse:
 
 def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
+
+
+def _authorize_request(request: Request, config: AppConfig) -> None:
+    if not config.api_security.require_api_key:
+        return
+
+    provided_key = _extract_api_key(request)
+    if provided_key is None or not _is_valid_api_key(provided_key, config):
+        _log_event(
+            "api_auth_failed",
+            request_id=request.state.request_id,
+            path=request.url.path,
+        )
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+def _extract_api_key(request: Request) -> str | None:
+    api_key = request.headers.get(API_KEY_HEADER)
+    if api_key:
+        return api_key
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return token
+    return None
+
+
+def _is_valid_api_key(provided_key: str, config: AppConfig) -> bool:
+    provided_hash = _hash_api_key(provided_key)
+    for expected_hash in config.api_security.api_key_hashes:
+        if compare_digest(provided_hash, expected_hash):
+            return True
+
+    for expected_key in _api_keys_from_env(config.api_security.api_key_env_var):
+        if compare_digest(provided_key, expected_key):
+            return True
+    return False
+
+
+def _hash_api_key(api_key: str) -> str:
+    return sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def _api_keys_from_env(env_var: str) -> tuple[str, ...]:
+    raw_value = os.environ.get(env_var, "")
+    return tuple(value.strip() for value in raw_value.split(",") if value.strip())
 
 
 def main() -> None:

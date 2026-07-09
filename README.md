@@ -71,6 +71,17 @@ curl -X POST http://localhost:8000/query \
 
 The API returns the grounded answer, query plan, citations, and optional retrieval trace.
 
+For production-style deployments, enable API key auth with `api_security.require_api_key`
+and provide keys through the configured environment variable instead of committing secrets.
+Protected endpoints accept either `X-API-Key` or `Authorization: Bearer ...`.
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What does AUTH-429 affect?","top_k":3}'
+```
+
 ## Configuration
 
 Runtime retrieval defaults can live in a JSON config file instead of being hardcoded in CLI calls.

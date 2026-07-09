@@ -8,6 +8,11 @@
   "security": {
     "default_user_groups": []
   },
+  "api_security": {
+    "require_api_key": false,
+    "api_key_env_var": "ENTERPRISE_RAG_API_KEYS",
+    "api_key_hashes": []
+  },
   "vector_index": {
     "provider": "qdrant",
     "collection_name": "enterprise_rag_chunks",

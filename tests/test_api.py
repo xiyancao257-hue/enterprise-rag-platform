@@ -1,9 +1,11 @@
 import json
 import logging
+from hashlib import sha256
 
 from fastapi.testclient import TestClient
 
-from enterprise_rag.api.app import REQUEST_ID_HEADER, create_app
+from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, create_app
+from enterprise_rag.config import ApiSecurityConfig, AppConfig
 from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
 
@@ -127,3 +129,142 @@ def test_metrics_records_failed_query(tmp_path) -> None:
     metrics = client.get("/metrics").text
     assert "enterprise_rag_query_requests_total 1" in metrics
     assert "enterprise_rag_query_failures_total 1" in metrics
+
+
+def test_health_remains_public_when_api_key_is_required(tmp_path) -> None:
+    app = create_app(
+        index_path=tmp_path / "missing.json",
+        config=AppConfig(api_security=ApiSecurityConfig(require_api_key=True)),
+    )
+    client = TestClient(app)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+
+
+def test_query_rejects_missing_or_wrong_api_key(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    missing_response = client.post("/query", json={"query": "hybrid retrieval"})
+    wrong_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "wrong-key"},
+        json={"query": "hybrid retrieval"},
+    )
+
+    assert missing_response.status_code == 401
+    assert wrong_response.status_code == 401
+    assert missing_response.json()["detail"] == "Invalid or missing API key."
+
+
+def test_query_accepts_hashed_api_key_or_bearer_token(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    header_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "correct-key"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+    bearer_response = client.post(
+        "/query",
+        headers={"Authorization": "Bearer correct-key"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert header_response.status_code == 200
+    assert bearer_response.status_code == 200
+
+
+def test_metrics_requires_api_key_when_auth_enabled(tmp_path) -> None:
+    app = create_app(
+        index_path=tmp_path / "missing.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    denied_response = client.get("/metrics")
+    allowed_response = client.get("/metrics", headers={API_KEY_HEADER: "correct-key"})
+
+    assert denied_response.status_code == 401
+    assert allowed_response.status_code == 200
+    assert "enterprise_rag_http_requests_total" in allowed_response.text
+
+
+def test_query_accepts_api_key_from_environment(tmp_path, monkeypatch) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    monkeypatch.setenv("ENTERPRISE_RAG_TEST_KEYS", "env-key-1,env-key-2")
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_env_var="ENTERPRISE_RAG_TEST_KEYS",
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "env-key-2"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+
+
+def _hash_test_key(api_key: str) -> str:
+    return sha256(api_key.encode("utf-8")).hexdigest()

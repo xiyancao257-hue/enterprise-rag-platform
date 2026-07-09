@@ -24,6 +24,11 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
             "security": {
                 "default_user_groups": ["engineering", "support"],
             },
+            "api_security": {
+                "require_api_key": True,
+                "api_key_env_var": "ENTERPRISE_RAG_TEST_KEYS",
+                "api_key_hashes": ["abc123"],
+            },
             "vector_index": {
                 "provider": "qdrant",
                 "collection_name": "chunks",
@@ -37,6 +42,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.retrieval.graph_max_hops == 3
     assert config.retrieval.experiment_k_values == (2, 4, 6)
     assert config.security.default_user_groups == ("engineering", "support")
+    assert config.api_security.require_api_key is True
+    assert config.api_security.api_key_env_var == "ENTERPRISE_RAG_TEST_KEYS"
+    assert config.api_security.api_key_hashes == ("abc123",)
     assert config.vector_index.provider == "qdrant"
     assert config.vector_index.collection_name == "chunks"
     assert config.vector_index.url == "http://qdrant:6333"
