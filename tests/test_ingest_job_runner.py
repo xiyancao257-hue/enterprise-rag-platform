@@ -30,6 +30,7 @@ def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path
         index_path=index_path,
         config=AppConfig(),
         log_event=lambda event, **fields: events.append((event, fields)),
+        worker_id="worker-a",
     ).run(job.job_id)
 
     finished = store.get(job.job_id)
@@ -38,9 +39,12 @@ def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path
     assert finished.status == "succeeded"
     assert finished.report is not None
     assert finished.report.documents_new == 1
+    assert finished.lease_owner is None
+    assert finished.lease_expires_at is None
     assert chunks[0].metadata["tenant_id"] == "acme"
     assert chunks[0].metadata["allowed_groups"] == "legal,security"
     assert events[0][0] == "ingest_job_completed"
+    assert events[0][1]["worker_id"] == "worker-a"
 
 
 def test_ingest_job_runner_dry_run_does_not_write_index(tmp_path: Path) -> None:
@@ -167,6 +171,35 @@ def test_ingest_job_runner_skips_canceled_job(tmp_path: Path) -> None:
     assert skipped.status == "canceled"
     assert skipped.attempt_count == 0
     assert skips == ["canceled"]
+
+
+def test_ingest_job_runner_skips_when_another_worker_holds_lease(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = InMemoryIngestJobStore(now=lambda: 100.0)
+    job = store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
+    assert store.acquire_lease(job.job_id, worker_id="worker-a", lease_expires_at=160.0) is True
+    skips = []
+
+    IngestJobRunner(
+        job_store=store,
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(),
+        record_skip=lambda reason: skips.append(reason),
+        worker_id="worker-b",
+        now=lambda: 120.0,
+    ).run(job.job_id)
+
+    skipped = store.get(job.job_id)
+    assert skipped is not None
+    assert skipped.status == "running"
+    assert skipped.attempt_count == 1
+    assert skipped.lease_owner == "worker-a"
+    assert skips == ["running"]
 
 
 def test_ingest_job_runner_skips_running_job_duplicate_delivery(tmp_path: Path) -> None:

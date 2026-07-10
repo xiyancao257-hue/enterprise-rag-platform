@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
 from enterprise_rag.config import AppConfig
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
@@ -27,6 +28,7 @@ class IngestJobRunner:
         record_retry_exhausted: Callable[[], None] | None = None,
         log_event: Callable[..., None] | None = None,
         now: Callable[[], float] | None = None,
+        worker_id: str | None = None,
     ) -> None:
         self.job_store = job_store
         self.index_path = index_path
@@ -37,6 +39,7 @@ class IngestJobRunner:
         self.record_retry_exhausted = record_retry_exhausted or (lambda: None)
         self.log_event = log_event or (lambda event, **fields: None)
         self.now = now or time.time
+        self.worker_id = worker_id or f"worker_{uuid4().hex}"
 
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
@@ -61,7 +64,16 @@ class IngestJobRunner:
             self._skip_job(job, reason=job.status)
             return
 
-        self.job_store.mark_running(job_id)
+        lease_expires_at = self.now() + self.config.jobs.running_timeout_seconds
+        if not self.job_store.acquire_lease(job_id, self.worker_id, lease_expires_at):
+            leased_job = self.job_store.get(job_id)
+            if leased_job is not None:
+                self._skip_job(leased_job, reason="leased")
+            return
+
+        job = self.job_store.get(job_id)
+        if job is None:
+            return
         started_at = time.perf_counter()
         try:
             metadata_overrides = self._metadata_overrides(job)
@@ -93,6 +105,7 @@ class IngestJobRunner:
                 request_id=job.request_id,
                 job_id=job.job_id,
                 tenant_id=job.tenant_id,
+                worker_id=self.worker_id,
                 chunks_indexed=report.chunks_indexed,
                 dry_run=job.dry_run,
                 latency_ms=round(latency_ms, 2),
@@ -121,6 +134,8 @@ class IngestJobRunner:
         return metadata
 
     def _is_stale_running(self, job: IngestJobRecord) -> bool:
+        if job.lease_expires_at is not None:
+            return job.lease_expires_at <= self.now()
         return self.now() - job.updated_at >= self.config.jobs.running_timeout_seconds
 
     def _skip_job(self, job: IngestJobRecord, reason: str) -> None:

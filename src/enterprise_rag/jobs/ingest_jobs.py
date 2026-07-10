@@ -26,6 +26,8 @@ class IngestJobRecord:
     updated_at: float
     attempt_count: int = 0
     max_attempts: int = 3
+    lease_owner: str | None = None
+    lease_expires_at: float | None = None
     report: IngestReport | None = None
     vector_sync: dict[str, int] | None = None
     error: str | None = None
@@ -51,6 +53,9 @@ class IngestJobStore(Protocol):
 
     def mark_running(self, job_id: str) -> None:
         """Mark an ingest job as running."""
+
+    def acquire_lease(self, job_id: str, worker_id: str, lease_expires_at: float) -> bool:
+        """Try to acquire ownership for a runnable ingest job."""
 
     def mark_succeeded(
         self,
@@ -103,19 +108,40 @@ class InMemoryIngestJobStore:
         job = self.jobs[job_id]
         self._update(job_id, status="running", attempt_count=job.attempt_count + 1)
 
+    def acquire_lease(self, job_id: str, worker_id: str, lease_expires_at: float) -> bool:
+        job = self.jobs[job_id]
+        if not _can_acquire_lease(job, self.now()):
+            return False
+        self._update(
+            job_id,
+            status="running",
+            attempt_count=job.attempt_count + 1,
+            lease_owner=worker_id,
+            lease_expires_at=lease_expires_at,
+        )
+        return True
+
     def mark_succeeded(
         self,
         job_id: str,
         report: IngestReport,
         vector_sync: dict[str, int] | None = None,
     ) -> None:
-        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync, error=None)
+        self._update(
+            job_id,
+            status="succeeded",
+            report=report,
+            vector_sync=vector_sync,
+            error=None,
+            lease_owner=None,
+            lease_expires_at=None,
+        )
 
     def mark_failed(self, job_id: str, error: str) -> None:
-        self._update(job_id, status="failed", error=error)
+        self._update(job_id, status="failed", error=error, lease_owner=None, lease_expires_at=None)
 
     def mark_canceled(self, job_id: str) -> None:
-        self._update(job_id, status="canceled", error=None)
+        self._update(job_id, status="canceled", error=None, lease_owner=None, lease_expires_at=None)
 
     def _update(self, job_id: str, **changes: object) -> None:
         job = self.jobs[job_id]
@@ -163,19 +189,41 @@ class JsonIngestJobStore:
         job = jobs[job_id]
         self._update(job_id, status="running", attempt_count=job.attempt_count + 1)
 
+    def acquire_lease(self, job_id: str, worker_id: str, lease_expires_at: float) -> bool:
+        jobs = self._load()
+        job = jobs[job_id]
+        if not _can_acquire_lease(job, self.now()):
+            return False
+        job.status = "running"
+        job.attempt_count += 1
+        job.lease_owner = worker_id
+        job.lease_expires_at = lease_expires_at
+        job.updated_at = self.now()
+        jobs[job_id] = job
+        self._save(jobs)
+        return True
+
     def mark_succeeded(
         self,
         job_id: str,
         report: IngestReport,
         vector_sync: dict[str, int] | None = None,
     ) -> None:
-        self._update(job_id, status="succeeded", report=report, vector_sync=vector_sync, error=None)
+        self._update(
+            job_id,
+            status="succeeded",
+            report=report,
+            vector_sync=vector_sync,
+            error=None,
+            lease_owner=None,
+            lease_expires_at=None,
+        )
 
     def mark_failed(self, job_id: str, error: str) -> None:
-        self._update(job_id, status="failed", error=error)
+        self._update(job_id, status="failed", error=error, lease_owner=None, lease_expires_at=None)
 
     def mark_canceled(self, job_id: str) -> None:
-        self._update(job_id, status="canceled", error=None)
+        self._update(job_id, status="canceled", error=None, lease_owner=None, lease_expires_at=None)
 
     def _update(self, job_id: str, **changes: object) -> None:
         jobs = self._load()
@@ -220,6 +268,8 @@ def _new_job(
         updated_at=now,
         attempt_count=0,
         max_attempts=3,
+        lease_owner=None,
+        lease_expires_at=None,
     )
 
 
@@ -250,10 +300,22 @@ def _job_from_dict(item: dict[str, object]) -> IngestJobRecord:
         updated_at=float(item["updated_at"]),
         attempt_count=int(item.get("attempt_count", 0)),
         max_attempts=int(item.get("max_attempts", 3)),
+        lease_owner=str(item["lease_owner"]) if item.get("lease_owner") is not None else None,
+        lease_expires_at=float(item["lease_expires_at"]) if item.get("lease_expires_at") is not None else None,
         report=report,
         vector_sync=parsed_vector_sync,
         error=str(item["error"]) if item.get("error") is not None else None,
     )
+
+
+def _can_acquire_lease(job: IngestJobRecord, now: float) -> bool:
+    if job.status in {"queued", "failed"}:
+        return True
+    if job.status != "running":
+        return False
+    if job.lease_expires_at is None:
+        return True
+    return job.lease_expires_at <= now
 
 
 def _report_from_dict(item: dict[str, object]) -> IngestReport:

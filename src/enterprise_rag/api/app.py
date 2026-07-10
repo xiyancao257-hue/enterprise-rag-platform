@@ -243,6 +243,8 @@ class IngestJobResponse(BaseModel):
     dry_run: bool
     attempt_count: int
     max_attempts: int
+    lease_owner: str | None = None
+    lease_expires_at: float | None = None
     report: IngestReportResponse | None = None
     vector_sync: dict[str, int] | None = None
     error: str | None = None
@@ -610,6 +612,8 @@ def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResp
         dry_run=job.dry_run,
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,
+        lease_owner=job.lease_owner,
+        lease_expires_at=job.lease_expires_at,
         report=_ingest_report_response(job.report) if job.report is not None else None,
         vector_sync=job.vector_sync,
         error=job.error,

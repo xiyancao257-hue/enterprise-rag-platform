@@ -27,6 +27,8 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
     assert reloaded.dry_run is False
     assert reloaded.attempt_count == 0
     assert reloaded.max_attempts == 3
+    assert reloaded.lease_owner is None
+    assert reloaded.lease_expires_at is None
     assert reloaded.created_at == 100.0
 
 
@@ -90,6 +92,44 @@ def test_json_ingest_job_store_persists_status_updates(tmp_path: Path) -> None:
         FilteredDocument(source_path="data/raw/image.png", reason="unsupported_extension"),
     )
     assert reloaded.vector_sync == {"vectors_upserted": 1, "vectors_deleted": 1}
+    assert reloaded.lease_owner is None
+    assert reloaded.lease_expires_at is None
+
+
+def test_json_ingest_job_store_acquires_and_persists_lease(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    store = JsonIngestJobStore(store_path, now=lambda: 100.0)
+    job = store.create("data/raw", tenant_id=None, sync_vectors=False, request_id="req_123")
+
+    acquired = store.acquire_lease(job.job_id, worker_id="worker-a", lease_expires_at=160.0)
+    duplicate = store.acquire_lease(job.job_id, worker_id="worker-b", lease_expires_at=170.0)
+    reloaded = JsonIngestJobStore(store_path).get(job.job_id)
+
+    assert acquired is True
+    assert duplicate is False
+    assert reloaded is not None
+    assert reloaded.status == "running"
+    assert reloaded.attempt_count == 1
+    assert reloaded.lease_owner == "worker-a"
+    assert reloaded.lease_expires_at == 160.0
+
+
+def test_json_ingest_job_store_allows_expired_lease_takeover(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    clock = iter([100.0, 100.0, 100.0, 200.0, 200.0])
+    store = JsonIngestJobStore(store_path, now=lambda: next(clock))
+    job = store.create("data/raw", tenant_id=None, sync_vectors=False, request_id="req_123")
+
+    first = store.acquire_lease(job.job_id, worker_id="worker-a", lease_expires_at=150.0)
+    second = store.acquire_lease(job.job_id, worker_id="worker-b", lease_expires_at=260.0)
+    reloaded = JsonIngestJobStore(store_path).get(job.job_id)
+
+    assert first is True
+    assert second is True
+    assert reloaded is not None
+    assert reloaded.attempt_count == 2
+    assert reloaded.lease_owner == "worker-b"
+    assert reloaded.lease_expires_at == 260.0
 
 
 def test_json_ingest_job_store_persists_failures(tmp_path: Path) -> None:
