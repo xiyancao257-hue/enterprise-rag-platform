@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.embeddings.base import EmbeddingModel
+from enterprise_rag.embeddings.cached import CachedEmbeddingModel
 from enterprise_rag.embeddings.hashing import HashingEmbeddingModel
 from enterprise_rag.models import Chunk
 from enterprise_rag.vector_index.base import VectorIndex
@@ -15,8 +17,16 @@ class VectorSyncReport:
 
 
 class VectorIndexSync:
-    def __init__(self, embedding_model: EmbeddingModel | None = None) -> None:
-        self.embedding_model = embedding_model or HashingEmbeddingModel()
+    def __init__(
+        self,
+        embedding_model: EmbeddingModel | None = None,
+        embedding_cache: CacheStore | None = None,
+    ) -> None:
+        self.embedding_model = embedding_model or CachedEmbeddingModel(
+            HashingEmbeddingModel(),
+            cache=embedding_cache,
+            model_id="hashing-embedding-v1",
+        )
 
     def sync(
         self,

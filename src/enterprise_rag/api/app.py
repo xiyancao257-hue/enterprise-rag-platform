@@ -15,6 +15,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Res
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from enterprise_rag.cache.in_memory import InMemoryCache
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
@@ -269,6 +270,7 @@ def create_app(
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
+    app.state.embedding_cache = InMemoryCache()
     app.state.audit_logger = audit_logger or (
         JsonAuditLogger(Path(config.audit.path)) if config.audit.enabled else NullAuditLogger()
     )
@@ -282,6 +284,7 @@ def create_app(
         record_skip=app.state.metrics.record_ingest_job_skip,
         record_retry_exhausted=app.state.metrics.record_ingest_job_retry_exhausted,
         log_event=_log_event,
+        embedding_cache=app.state.embedding_cache,
     )
     app.state.ingest_job_queue_factory = ingest_job_queue_factory or FastApiBackgroundTaskQueue
 
@@ -373,6 +376,7 @@ def create_app(
             enable_graph=config.retrieval.enable_graph,
             graph_max_hops=config.retrieval.graph_max_hops,
             vector_index=create_vector_index(config.vector_index),
+            embedding_cache=app.state.embedding_cache,
         )
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,

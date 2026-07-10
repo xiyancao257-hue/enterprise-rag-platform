@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Protocol
 
+from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.retrieval.bm25 import BM25Retriever
 from enterprise_rag.retrieval.filters import MetadataFilter
@@ -21,10 +22,11 @@ class HybridRetriever:
         chunks: list[Chunk],
         extra_retrievers: list[SingleQueryRetriever] | None = None,
         vector_index: VectorIndex | None = None,
+        embedding_cache: CacheStore | None = None,
     ) -> None:
         self.chunks = chunks
         self.bm25 = BM25Retriever(chunks)
-        self.vector = HashingVectorRetriever(chunks, vector_index=vector_index)
+        self.vector = HashingVectorRetriever(chunks, vector_index=vector_index, embedding_cache=embedding_cache)
         self.extra_retrievers = extra_retrievers or []
 
     def search(

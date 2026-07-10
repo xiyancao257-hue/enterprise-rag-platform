@@ -3,7 +3,11 @@ from enterprise_rag.models import Chunk
 
 
 class FakeEmbeddingModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def embed(self, text: str) -> list[float]:
+        self.calls += 1
         return [float(len(text))]
 
 
@@ -47,3 +51,28 @@ def test_vector_index_sync_deletes_stale_vectors_before_upserting_chunks() -> No
         ("delete", ["old_chunk"]),
         ("add", "new_chunk", [12.0], {"tenant_id": "acme", "source_path": "guide.md"}),
     ]
+
+
+def test_vector_index_sync_can_use_cached_embedding_model_for_duplicate_text() -> None:
+    from enterprise_rag.cache.in_memory import InMemoryCache
+    from enterprise_rag.embeddings.cached import CachedEmbeddingModel
+
+    index = RecordingVectorIndex()
+    base_model = FakeEmbeddingModel()
+    cache = InMemoryCache()
+    embedding_model = CachedEmbeddingModel(base_model, cache=cache, model_id="fake")
+    chunks = [
+        Chunk(id="chunk1", document_id="doc1", text="same text"),
+        Chunk(id="chunk2", document_id="doc2", text="same text"),
+    ]
+
+    report = VectorIndexSync(embedding_model=embedding_model).sync(
+        index,
+        chunks_to_upsert=chunks,
+        chunk_ids_to_delete=[],
+    )
+
+    assert report.vectors_upserted == 2
+    assert base_model.calls == 1
+    assert cache.hits == 1
+    assert cache.misses == 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.graph.knowledge_graph import KnowledgeGraphBuilder
 from enterprise_rag.models import Chunk, RagAnswer
 from enterprise_rag.observability.tracing import QueryTrace, trace_hits
@@ -25,6 +26,7 @@ class RagPipeline:
         enable_graph: bool = False,
         graph_max_hops: int = 2,
         vector_index: VectorIndex | None = None,
+        embedding_cache: CacheStore | None = None,
     ) -> None:
         vocabulary = {token for chunk in chunks for token in tokenize(chunk.text)}
         extra_retrievers = []
@@ -32,7 +34,12 @@ class RagPipeline:
             graph = KnowledgeGraphBuilder().build(chunks)
             extra_retrievers.append(GraphRetriever(graph, max_hops=graph_max_hops))
         self.query_engine = QueryEngine(vocabulary=vocabulary)
-        self.retriever = HybridRetriever(chunks, extra_retrievers=extra_retrievers, vector_index=vector_index)
+        self.retriever = HybridRetriever(
+            chunks,
+            extra_retrievers=extra_retrievers,
+            vector_index=vector_index,
+            embedding_cache=embedding_cache,
+        )
         self.reranker = reranker or LightweightReranker()
         self.prompt_injection_detector = prompt_injection_detector or PromptInjectionDetector()
         self.compressor = ContextCompressor()

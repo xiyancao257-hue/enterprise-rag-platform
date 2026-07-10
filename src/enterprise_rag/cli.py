@@ -4,6 +4,7 @@ import argparse
 import time
 from pathlib import Path
 
+from enterprise_rag.cache.in_memory import InMemoryCache
 from enterprise_rag.config import load_config
 from enterprise_rag.evaluation.eval_generation import (
     generate_eval_cases_from_logs,
@@ -231,6 +232,7 @@ def ingest(
     dry_run: bool = False,
 ) -> None:
     config = load_config(config_path)
+    embedding_cache = InMemoryCache()
     store = JsonChunkStore(index_path)
     metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
     report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(config.ingestion)).run(
@@ -250,7 +252,7 @@ def ingest(
     if sync_vectors and not dry_run:
         chunks_by_id = {chunk.id: chunk for chunk in store.load()}
         chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
-        sync_report = VectorIndexSync().sync(
+        sync_report = VectorIndexSync(embedding_cache=embedding_cache).sync(
             create_vector_index(config.vector_index),
             chunks_to_upsert=chunks_to_upsert,
             chunk_ids_to_delete=list(report.chunks_deleted),
@@ -267,6 +269,7 @@ def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | 
         job_store=job_store,
         index_path=index_path,
         config=load_config(config_path),
+        embedding_cache=InMemoryCache(),
     )
     runner.run(job_id)
     job = job_store.get(job_id)
@@ -303,7 +306,7 @@ def worker(
     config = load_config(config_path)
     interval = poll_seconds if poll_seconds is not None else config.jobs.worker_poll_seconds
     job_store = JsonIngestJobStore(jobs_path)
-    runner = IngestJobRunner(job_store=job_store, index_path=index_path, config=config)
+    runner = IngestJobRunner(job_store=job_store, index_path=index_path, config=config, embedding_cache=InMemoryCache())
 
     while True:
         jobs = job_store.list()

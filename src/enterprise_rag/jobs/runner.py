@@ -5,6 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
+from enterprise_rag.cache.base import CacheStore
+from enterprise_rag.cache.in_memory import InMemoryCache
 from enterprise_rag.config import AppConfig
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
@@ -29,6 +31,7 @@ class IngestJobRunner:
         log_event: Callable[..., None] | None = None,
         now: Callable[[], float] | None = None,
         worker_id: str | None = None,
+        embedding_cache: CacheStore | None = None,
     ) -> None:
         self.job_store = job_store
         self.index_path = index_path
@@ -40,6 +43,7 @@ class IngestJobRunner:
         self.log_event = log_event or (lambda event, **fields: None)
         self.now = now or time.time
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
+        self.embedding_cache = embedding_cache or InMemoryCache()
 
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
@@ -88,7 +92,7 @@ class IngestJobRunner:
             if job.sync_vectors and not job.dry_run:
                 chunks_by_id = {chunk.id: chunk for chunk in store.load()}
                 chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
-                sync_report = VectorIndexSync().sync(
+                sync_report = VectorIndexSync(embedding_cache=self.embedding_cache).sync(
                     create_vector_index(self.config.vector_index),
                     chunks_to_upsert=chunks_to_upsert,
                     chunk_ids_to_delete=list(report.chunks_deleted),

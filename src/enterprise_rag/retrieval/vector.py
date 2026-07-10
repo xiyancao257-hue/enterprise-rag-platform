@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.embeddings.base import EmbeddingModel
+from enterprise_rag.embeddings.cached import CachedEmbeddingModel
 from enterprise_rag.embeddings.hashing import HashingEmbeddingModel
 from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.vector_index.base import VectorIndex
@@ -13,10 +15,15 @@ class HashingVectorRetriever:
         chunks: list[Chunk],
         embedding_model: EmbeddingModel | None = None,
         vector_index: VectorIndex | None = None,
+        embedding_cache: CacheStore | None = None,
     ) -> None:
         self.chunks = chunks
         self.chunks_by_id = {chunk.id: chunk for chunk in chunks}
-        self.embedding_model = embedding_model or HashingEmbeddingModel()
+        self.embedding_model = embedding_model or CachedEmbeddingModel(
+            HashingEmbeddingModel(),
+            cache=embedding_cache,
+            model_id="hashing-embedding-v1",
+        )
         self.vector_index = vector_index or InMemoryVectorIndex()
         for chunk in chunks:
             self.vector_index.add(chunk.id, self.embedding_model.embed(chunk.text), metadata=chunk.metadata)

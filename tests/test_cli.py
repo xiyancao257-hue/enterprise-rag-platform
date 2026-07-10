@@ -10,6 +10,9 @@ from enterprise_rag.storage.json_store import JsonChunkStore
 class RecordingVectorSync:
     calls = []
 
+    def __init__(self, embedding_cache=None) -> None:
+        self.embedding_cache = embedding_cache
+
     def sync(self, vector_index: object, chunks_to_upsert: list[object], chunk_ids_to_delete: list[str]) -> object:
         self.calls.append((vector_index, chunks_to_upsert, chunk_ids_to_delete))
         return type(
