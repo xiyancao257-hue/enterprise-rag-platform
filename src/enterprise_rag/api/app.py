@@ -11,7 +11,7 @@ from hmac import compare_digest
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -468,7 +468,11 @@ def create_app(
         return _ingest_job_response(request.state.request_id, job)
 
     @app.get("/ingest-jobs", response_model=list[IngestJobResponse])
-    def list_ingest_jobs(request: Request, status: str | None = None) -> list[IngestJobResponse]:
+    def list_ingest_jobs(
+        request: Request,
+        status: str | None = None,
+        limit: int = Query(default=50, ge=1, le=100),
+    ) -> list[IngestJobResponse]:
         auth_context = _authorize_request(request, app.state.config)
         tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
         jobs = app.state.ingest_jobs.list()
@@ -476,6 +480,7 @@ def create_app(
             jobs = [job for job in jobs if job.tenant_id == tenant_id]
         if status is not None:
             jobs = [job for job in jobs if job.status == status]
+        jobs = sorted(jobs, key=lambda job: job.created_at, reverse=True)[:limit]
         return [_ingest_job_response(request.state.request_id, job) for job in jobs]
 
     @app.get("/ingest-jobs/{job_id}", response_model=IngestJobResponse)

@@ -983,11 +983,30 @@ def test_ingest_job_list_returns_jobs_and_filters_by_status(tmp_path) -> None:
     assert second_response.status_code == 202
     assert list_response.status_code == 200
     assert [job["job_id"] for job in list_response.json()] == [
-        first_response.json()["job_id"],
         second_response.json()["job_id"],
+        first_response.json()["job_id"],
     ]
     assert len(succeeded_response.json()) == 2
     assert running_response.json() == []
+
+
+def test_ingest_job_list_limit_returns_recent_jobs_first(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(index_path=tmp_path / "chunks.json"))
+
+    first_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    second_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir), "dry_run": True})
+    limited_response = client.get("/ingest-jobs?limit=1")
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
+    assert limited_response.status_code == 200
+    assert [job["job_id"] for job in limited_response.json()] == [second_response.json()["job_id"]]
 
 
 def test_ingest_job_list_is_tenant_scoped(tmp_path) -> None:
