@@ -70,6 +70,13 @@ class AuditConfig:
 
 
 @dataclass(frozen=True)
+class LeaseConfig:
+    provider: str = "memory"
+    url: str = "redis://localhost:6379/0"
+    prefix: str = "enterprise-rag"
+
+
+@dataclass(frozen=True)
 class CacheConfig:
     provider: str = "memory"
     url: str = "redis://localhost:6379/0"
@@ -88,6 +95,7 @@ class AppConfig:
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
+    leases: LeaseConfig = field(default_factory=LeaseConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
 
 
@@ -111,6 +119,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     ingestion_data = _section(data, "ingestion")
     llm_data = _section(data, "llm")
     audit_data = _section(data, "audit")
+    leases_data = _section(data, "leases")
     cache_data = _section(data, "cache")
 
     return AppConfig(
@@ -176,6 +185,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         audit=AuditConfig(
             enabled=bool(audit_data.get("enabled", AuditConfig.enabled)),
             path=str(audit_data.get("path", AuditConfig.path)),
+        ),
+        leases=LeaseConfig(
+            provider=str(leases_data.get("provider", LeaseConfig.provider)),
+            url=str(leases_data.get("url", LeaseConfig.url)),
+            prefix=str(leases_data.get("prefix", LeaseConfig.prefix)),
         ),
         cache=CacheConfig(
             provider=str(cache_data.get("provider", CacheConfig.provider)),

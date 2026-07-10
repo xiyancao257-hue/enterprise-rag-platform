@@ -7,6 +7,17 @@ from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
+class DenyingLeaseStore:
+    def acquire(self, name: str, owner: str, ttl_seconds: int) -> bool:
+        return False
+
+    def release(self, name: str, owner: str) -> bool:
+        return False
+
+    def get_owner(self, name: str) -> str | None:
+        return "worker-a"
+
+
 def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -200,6 +211,32 @@ def test_ingest_job_runner_skips_when_another_worker_holds_lease(tmp_path: Path)
     assert skipped.attempt_count == 1
     assert skipped.lease_owner == "worker-a"
     assert skips == ["running"]
+
+
+def test_ingest_job_runner_skips_when_distributed_lease_is_held(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = InMemoryIngestJobStore()
+    job = store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
+    skips = []
+
+    IngestJobRunner(
+        job_store=store,
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(),
+        record_skip=lambda reason: skips.append(reason),
+        lease_store=DenyingLeaseStore(),
+    ).run(job.job_id)
+
+    skipped = store.get(job.job_id)
+    assert skipped is not None
+    assert skipped.status == "queued"
+    assert skipped.attempt_count == 0
+    assert skips == ["distributed_lease"]
 
 
 def test_ingest_job_runner_skips_running_job_duplicate_delivery(tmp_path: Path) -> None:

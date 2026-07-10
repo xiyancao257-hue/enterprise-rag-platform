@@ -40,6 +40,11 @@
     "enabled": false,
     "path": "data/audit/audit.jsonl"
   },
+  "leases": {
+    "provider": "memory",
+    "url": "redis://redis:6379/0",
+    "prefix": "enterprise-rag"
+  },
   "cache": {
     "provider": "memory",
     "url": "redis://redis:6379/0",

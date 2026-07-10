@@ -22,6 +22,7 @@ from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
 from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
 from enterprise_rag.jobs.runner import IngestJobRunner
+from enterprise_rag.leases.factory import create_lease_store
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAuditLogger, NullAuditLogger
 from enterprise_rag.observability.costs import LLMCostEstimator
@@ -273,6 +274,7 @@ def create_app(
     app.state.rate_limiter = FixedWindowRateLimiter()
     app.state.embedding_cache = create_cache(config.cache)
     app.state.query_cache = create_cache(config.cache)
+    app.state.lease_store = create_lease_store(config.leases)
     app.state.audit_logger = audit_logger or (
         JsonAuditLogger(Path(config.audit.path)) if config.audit.enabled else NullAuditLogger()
     )
@@ -288,6 +290,7 @@ def create_app(
         log_event=_log_event,
         embedding_cache=app.state.embedding_cache,
         embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+        lease_store=app.state.lease_store,
     )
     app.state.ingest_job_queue_factory = ingest_job_queue_factory or FastApiBackgroundTaskQueue
 

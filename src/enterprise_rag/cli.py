@@ -30,6 +30,7 @@ from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.jobs.runner import IngestJobRunner
+from enterprise_rag.leases.factory import create_lease_store
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
 from enterprise_rag.observability.query_logging import QueryLogger, build_query_log_record
 from enterprise_rag.observability.tracing import format_query_trace
@@ -278,6 +279,7 @@ def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | 
         config=config,
         embedding_cache=create_cache(config.cache),
         embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+        lease_store=create_lease_store(config.leases),
     )
     runner.run(job_id)
     job = job_store.get(job_id)
@@ -320,6 +322,7 @@ def worker(
         config=config,
         embedding_cache=create_cache(config.cache),
         embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+        lease_store=create_lease_store(config.leases),
     )
 
     while True:

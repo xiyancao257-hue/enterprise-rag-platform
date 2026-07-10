@@ -12,6 +12,8 @@ from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
+from enterprise_rag.leases.base import LeaseStore
+from enterprise_rag.leases.in_memory import InMemoryLeaseStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -33,6 +35,7 @@ class IngestJobRunner:
         worker_id: str | None = None,
         embedding_cache: CacheStore | None = None,
         embedding_ttl_seconds: int | None = None,
+        lease_store: LeaseStore | None = None,
     ) -> None:
         self.job_store = job_store
         self.index_path = index_path
@@ -48,6 +51,7 @@ class IngestJobRunner:
         self.embedding_ttl_seconds = (
             embedding_ttl_seconds if embedding_ttl_seconds is not None else config.cache.embedding_ttl_seconds
         )
+        self.lease_store = lease_store or InMemoryLeaseStore()
 
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
@@ -72,18 +76,23 @@ class IngestJobRunner:
             self._skip_job(job, reason=job.status)
             return
 
-        lease_expires_at = self.now() + self.config.jobs.running_timeout_seconds
-        if not self.job_store.acquire_lease(job_id, self.worker_id, lease_expires_at):
-            leased_job = self.job_store.get(job_id)
-            if leased_job is not None:
-                self._skip_job(leased_job, reason="leased")
+        lease_name = f"ingest-job:{job_id}"
+        if not self.lease_store.acquire(lease_name, self.worker_id, self.config.jobs.running_timeout_seconds):
+            self._skip_job(job, reason="distributed_lease")
             return
 
-        job = self.job_store.get(job_id)
-        if job is None:
-            return
         started_at = time.perf_counter()
         try:
+            lease_expires_at = self.now() + self.config.jobs.running_timeout_seconds
+            if not self.job_store.acquire_lease(job_id, self.worker_id, lease_expires_at):
+                leased_job = self.job_store.get(job_id)
+                if leased_job is not None:
+                    self._skip_job(leased_job, reason="leased")
+                return
+
+            job = self.job_store.get(job_id)
+            if job is None:
+                return
             metadata_overrides = self._metadata_overrides(job)
             store = JsonChunkStore(self.index_path)
             report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(self.config.ingestion)).run(
@@ -132,6 +141,8 @@ class IngestJobRunner:
                 error=str(exc),
                 latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
             )
+        finally:
+            self.lease_store.release(lease_name, self.worker_id)
 
     def _tenant_metadata_filter(self, tenant_id: str | None) -> dict[str, str]:
         if tenant_id is None:
