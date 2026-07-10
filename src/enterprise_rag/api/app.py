@@ -467,6 +467,17 @@ def create_app(
         )
         return _ingest_job_response(request.state.request_id, job)
 
+    @app.get("/ingest-jobs", response_model=list[IngestJobResponse])
+    def list_ingest_jobs(request: Request, status: str | None = None) -> list[IngestJobResponse]:
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
+        jobs = app.state.ingest_jobs.list()
+        if tenant_id is not None:
+            jobs = [job for job in jobs if job.tenant_id == tenant_id]
+        if status is not None:
+            jobs = [job for job in jobs if job.status == status]
+        return [_ingest_job_response(request.state.request_id, job) for job in jobs]
+
     @app.get("/ingest-jobs/{job_id}", response_model=IngestJobResponse)
     def get_ingest_job(job_id: str, request: Request) -> IngestJobResponse:
         auth_context = _authorize_request(request, app.state.config)

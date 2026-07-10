@@ -964,6 +964,80 @@ def test_ingest_job_status_is_tenant_scoped(tmp_path) -> None:
     assert cross_tenant_response.status_code == 404
 
 
+def test_ingest_job_list_returns_jobs_and_filters_by_status(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(index_path=tmp_path / "chunks.json"))
+
+    first_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    second_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir), "dry_run": True})
+    list_response = client.get("/ingest-jobs")
+    succeeded_response = client.get("/ingest-jobs?status=succeeded")
+    running_response = client.get("/ingest-jobs?status=running")
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
+    assert list_response.status_code == 200
+    assert [job["job_id"] for job in list_response.json()] == [
+        first_response.json()["job_id"],
+        second_response.json()["job_id"],
+    ]
+    assert len(succeeded_response.json()) == 2
+    assert running_response.json() == []
+
+
+def test_ingest_job_list_is_tenant_scoped(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    app = create_app(
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("globex-key"),
+                        allowed_tenants=("globex",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    acme_response = client.post(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"source_path": str(raw_dir)},
+    )
+    globex_response = client.post(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "globex-key", TENANT_ID_HEADER: "globex"},
+        json={"source_path": str(raw_dir)},
+    )
+    list_response = client.get(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+    )
+
+    assert acme_response.status_code == 202
+    assert globex_response.status_code == 202
+    assert [job["job_id"] for job in list_response.json()] == [acme_response.json()["job_id"]]
+    assert list_response.json()[0]["tenant_id"] == "acme"
+
+
 def test_ingest_job_status_survives_app_restart_with_json_store(tmp_path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
