@@ -5,6 +5,9 @@ from pathlib import Path
 
 from enterprise_rag.config import IngestionConfig
 
+FILTER_UNSUPPORTED_EXTENSION = "unsupported_extension"
+FILTER_FILE_TOO_LARGE = "file_too_large"
+
 
 @dataclass(frozen=True)
 class IngestionFilePolicy:
@@ -19,9 +22,12 @@ class IngestionFilePolicy:
         )
 
     def allows(self, path: Path) -> bool:
+        return self.rejection_reason(path) is None
+
+    def rejection_reason(self, path: Path) -> str | None:
         extension = path.suffix.lower()
         if extension not in self.allowed_extensions:
-            return False
+            return FILTER_UNSUPPORTED_EXTENSION
         if self.max_file_bytes > 0 and path.stat().st_size > self.max_file_bytes:
-            return False
-        return True
+            return FILTER_FILE_TOO_LARGE
+        return None

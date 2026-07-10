@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from enterprise_rag.ingestion.loaders import load_documents, load_documents_with_report
-from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
-from enterprise_rag.ingestion.policy import IngestionFilePolicy
+from enterprise_rag.ingestion.pipeline import FILTER_LOW_QUALITY_TEXT, IncrementalIngestPipeline
+from enterprise_rag.ingestion.policy import FILTER_FILE_TOO_LARGE, FILTER_UNSUPPORTED_EXTENSION, IngestionFilePolicy
 from enterprise_rag.models import BlockType, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -43,6 +43,10 @@ def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> N
     assert len(result.documents) == 1
     assert result.documents[0].metadata["filename"] == "guide.md"
     assert result.documents_filtered == 2
+    assert result.filter_reasons == {
+        FILTER_UNSUPPORTED_EXTENSION: 1,
+        FILTER_FILE_TOO_LARGE: 1,
+    }
 
 
 def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path) -> None:
@@ -62,7 +66,25 @@ def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path
 
     assert report.documents_loaded == 1
     assert report.documents_filtered == 2
+    assert report.filter_reasons == {
+        FILTER_UNSUPPORTED_EXTENSION: 1,
+        FILTER_FILE_TOO_LARGE: 1,
+    }
     assert report.documents_new == 1
+
+
+def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("tiny.md").write_text("short", encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline().run(raw_dir, store)
+
+    assert report.documents_loaded == 1
+    assert report.documents_filtered == 1
+    assert report.filter_reasons == {FILTER_LOW_QUALITY_TEXT: 1}
+    assert store.load() == []
 
 
 def test_cleaner_filters_low_quality_documents() -> None:

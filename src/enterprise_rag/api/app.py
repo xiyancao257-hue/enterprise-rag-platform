@@ -223,6 +223,7 @@ class IngestReportResponse(BaseModel):
     documents_unchanged: int
     documents_deleted: int
     documents_filtered: int
+    filter_reasons: dict[str, int]
     chunks_indexed: int
     chunks_upserted: list[str]
     chunks_deleted: list[str]
@@ -562,6 +563,7 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         documents_unchanged=report.documents_unchanged,
         documents_deleted=report.documents_deleted,
         documents_filtered=report.documents_filtered,
+        filter_reasons=report.filter_reasons or {},
         chunks_indexed=report.chunks_indexed,
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),

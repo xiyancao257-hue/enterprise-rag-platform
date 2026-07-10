@@ -234,4 +234,5 @@ def _report_from_dict(item: dict[str, object]) -> IngestReport:
         chunks_indexed=int(item["chunks_indexed"]),
         chunks_upserted=tuple(str(value) for value in item.get("chunks_upserted", ())),
         chunks_deleted=tuple(str(value) for value in item.get("chunks_deleted", ())),
+        filter_reasons={str(key): int(value) for key, value in item.get("filter_reasons", {}).items()},
     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from enterprise_rag.ingestion.loaders import load_documents_with_report
@@ -11,6 +11,8 @@ from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.processing.redaction import SensitiveDataRedactor
 from enterprise_rag.storage.json_store import JsonChunkStore
+
+FILTER_LOW_QUALITY_TEXT = "low_quality_text"
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class IngestReport:
     chunks_indexed: int
     chunks_upserted: tuple[str, ...] = ()
     chunks_deleted: tuple[str, ...] = ()
+    filter_reasons: dict[str, int] = field(default_factory=dict)
 
 
 class IncrementalIngestPipeline:
@@ -65,6 +68,7 @@ class IncrementalIngestPipeline:
         documents_updated = 0
         documents_unchanged = 0
         documents_filtered = load_result.documents_filtered
+        filter_reasons = dict(load_result.filter_reasons)
         chunks_upserted: list[str] = []
         chunks_deleted: list[str] = []
 
@@ -78,6 +82,7 @@ class IncrementalIngestPipeline:
             processed_chunks = self._process_document(document)
             if not processed_chunks:
                 documents_filtered += 1
+                self._count_filter_reason(filter_reasons, FILTER_LOW_QUALITY_TEXT)
                 chunks_deleted.extend(chunk.id for chunk in previous_chunks)
             elif previous_chunks:
                 documents_updated += 1
@@ -105,6 +110,7 @@ class IncrementalIngestPipeline:
             chunks_indexed=len(next_chunks),
             chunks_upserted=tuple(chunks_upserted),
             chunks_deleted=tuple(chunks_deleted),
+            filter_reasons=filter_reasons,
         )
 
     def _process_document(self, document: Document) -> list[Chunk]:
@@ -138,3 +144,6 @@ class IncrementalIngestPipeline:
 
     def _source_key(self, metadata: dict[str, str], source_path: str) -> tuple[str, str]:
         return (metadata.get("tenant_id", ""), source_path)
+
+    def _count_filter_reason(self, filter_reasons: dict[str, int], reason: str) -> None:
+        filter_reasons[reason] = filter_reasons.get(reason, 0) + 1

@@ -8,11 +8,14 @@ from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Document
 from enterprise_rag.text import normalize_text
 
+FILTER_EMPTY_TEXT = "empty_text"
+
 
 @dataclass(frozen=True)
 class LoadDocumentsResult:
     documents: tuple[Document, ...]
     documents_filtered: int
+    filter_reasons: dict[str, int]
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -30,15 +33,16 @@ def load_documents_with_report(
         files = sorted(file for file in path.rglob("*") if file.is_file())
 
     documents: list[Document] = []
-    documents_filtered = 0
+    filter_reasons: dict[str, int] = {}
     for file in files:
-        if not policy.allows(file):
-            documents_filtered += 1
+        rejection_reason = policy.rejection_reason(file)
+        if rejection_reason is not None:
+            _count_filter_reason(filter_reasons, rejection_reason)
             continue
         raw_text = file.read_text(encoding="utf-8", errors="ignore")
         text = normalize_text(raw_text)
         if not text:
-            documents_filtered += 1
+            _count_filter_reason(filter_reasons, FILTER_EMPTY_TEXT)
             continue
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         doc_id = hashlib.sha256(str(file.resolve()).encode("utf-8")).hexdigest()[:16]
@@ -50,4 +54,12 @@ def load_documents_with_report(
                 metadata={"extension": file.suffix.lower(), "filename": file.name, "content_hash": content_hash},
             )
         )
-    return LoadDocumentsResult(documents=tuple(documents), documents_filtered=documents_filtered)
+    return LoadDocumentsResult(
+        documents=tuple(documents),
+        documents_filtered=sum(filter_reasons.values()),
+        filter_reasons=filter_reasons,
+    )
+
+
+def _count_filter_reason(filter_reasons: dict[str, int], reason: str) -> None:
+    filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
