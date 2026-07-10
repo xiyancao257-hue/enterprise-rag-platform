@@ -487,17 +487,54 @@ def create_app(
     def get_ingest_job(job_id: str, request: Request) -> IngestJobResponse:
         auth_context = _authorize_request(request, app.state.config)
         tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
-        job = app.state.ingest_jobs.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="Ingest job not found.")
-        if tenant_id is not None and job.tenant_id != tenant_id:
-            raise HTTPException(status_code=404, detail="Ingest job not found.")
+        job = _get_tenant_scoped_ingest_job(app.state.ingest_jobs, job_id, tenant_id)
         return _ingest_job_response(request.state.request_id, job)
+
+    @app.post("/ingest-jobs/{job_id}/cancel", response_model=IngestJobResponse)
+    def cancel_ingest_job(job_id: str, request: Request) -> IngestJobResponse:
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
+        job = _get_tenant_scoped_ingest_job(app.state.ingest_jobs, job_id, tenant_id)
+        if job.status not in {"queued", "failed"}:
+            raise HTTPException(status_code=409, detail=f"Cannot cancel ingest job with status `{job.status}`.")
+        app.state.ingest_jobs.mark_canceled(job_id)
+        canceled = app.state.ingest_jobs.get(job_id)
+        if canceled is None:
+            raise HTTPException(status_code=404, detail="Ingest job not found.")
+        app.state.audit_logger.log(
+            AuditEvent(
+                event_type="ingest_job.canceled",
+                request_id=request.state.request_id,
+                tenant_id=tenant_id,
+                principal=_audit_principal(request, auth_context),
+                attributes={"job_id": job_id},
+            )
+        )
+        _log_event(
+            "ingest_job_canceled",
+            request_id=request.state.request_id,
+            job_id=job_id,
+            tenant_id=tenant_id,
+        )
+        return _ingest_job_response(request.state.request_id, canceled)
 
     return app
 
 
 app = create_app()
+
+
+def _get_tenant_scoped_ingest_job(
+    job_store: IngestJobStore,
+    job_id: str,
+    tenant_id: str | None,
+) -> IngestJobRecord:
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Ingest job not found.")
+    if tenant_id is not None and job.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Ingest job not found.")
+    return job
 
 
 def _query_response(

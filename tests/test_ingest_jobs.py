@@ -105,6 +105,19 @@ def test_json_ingest_job_store_persists_failures(tmp_path: Path) -> None:
     assert reloaded.error == "OCR failed"
 
 
+def test_json_ingest_job_store_persists_cancellations(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    store = JsonIngestJobStore(store_path)
+    job = store.create("data/raw", tenant_id=None, sync_vectors=False, request_id="req_123")
+
+    store.mark_canceled(job.job_id)
+
+    reloaded = JsonIngestJobStore(store_path).get(job.job_id)
+    assert reloaded is not None
+    assert reloaded.status == "canceled"
+    assert reloaded.error is None
+
+
 def test_json_ingest_job_store_preserves_attempt_metadata(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs" / "ingest_jobs.json"
     store = JsonIngestJobStore(store_path)

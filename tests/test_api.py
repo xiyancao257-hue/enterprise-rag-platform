@@ -1057,6 +1057,111 @@ def test_ingest_job_list_is_tenant_scoped(tmp_path) -> None:
     assert list_response.json()[0]["tenant_id"] == "acme"
 
 
+def test_ingest_job_cancel_updates_queued_job_status(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    published = []
+
+    class RecordingQueue:
+        def __init__(self, background_tasks, runner) -> None:
+            self.background_tasks = background_tasks
+            self.runner = runner
+
+        def publish(self, job_id: str) -> None:
+            published.append(job_id)
+
+    client = TestClient(
+        create_app(
+            index_path=tmp_path / "chunks.json",
+            ingest_job_queue_factory=RecordingQueue,
+        )
+    )
+
+    create_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    cancel_response = client.post(f"/ingest-jobs/{create_response.json()['job_id']}/cancel")
+    list_response = client.get("/ingest-jobs?status=canceled")
+
+    assert create_response.status_code == 202
+    assert published == [create_response.json()["job_id"]]
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "canceled"
+    assert [job["job_id"] for job in list_response.json()] == [create_response.json()["job_id"]]
+
+
+def test_ingest_job_cancel_rejects_completed_job(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(index_path=tmp_path / "chunks.json"))
+
+    create_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+    status_response = client.get(f"/ingest-jobs/{create_response.json()['job_id']}")
+    cancel_response = client.post(f"/ingest-jobs/{create_response.json()['job_id']}/cancel")
+
+    assert create_response.status_code == 202
+    assert status_response.json()["status"] == "succeeded"
+    assert cancel_response.status_code == 409
+    assert cancel_response.json()["detail"] == "Cannot cancel ingest job with status `succeeded`."
+
+
+def test_ingest_job_cancel_is_tenant_scoped(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+
+    class RecordingQueue:
+        def __init__(self, background_tasks, runner) -> None:
+            self.background_tasks = background_tasks
+            self.runner = runner
+
+        def publish(self, job_id: str) -> None:
+            return None
+
+    app = create_app(
+        index_path=tmp_path / "chunks.json",
+        ingest_job_queue_factory=RecordingQueue,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("globex-key"),
+                        allowed_tenants=("globex",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/ingest-jobs",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"source_path": str(raw_dir)},
+    )
+    cancel_response = client.post(
+        f"/ingest-jobs/{create_response.json()['job_id']}/cancel",
+        headers={API_KEY_HEADER: "globex-key", TENANT_ID_HEADER: "globex"},
+    )
+
+    assert create_response.status_code == 202
+    assert cancel_response.status_code == 404
+
+
 def test_ingest_job_status_survives_app_restart_with_json_store(tmp_path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

@@ -63,6 +63,9 @@ class IngestJobStore(Protocol):
     def mark_failed(self, job_id: str, error: str) -> None:
         """Mark an ingest job as failed."""
 
+    def mark_canceled(self, job_id: str) -> None:
+        """Mark an ingest job as canceled."""
+
 
 class InMemoryIngestJobStore:
     def __init__(self, now: Callable[[], float] | None = None) -> None:
@@ -110,6 +113,9 @@ class InMemoryIngestJobStore:
 
     def mark_failed(self, job_id: str, error: str) -> None:
         self._update(job_id, status="failed", error=error)
+
+    def mark_canceled(self, job_id: str) -> None:
+        self._update(job_id, status="canceled", error=None)
 
     def _update(self, job_id: str, **changes: object) -> None:
         job = self.jobs[job_id]
@@ -167,6 +173,9 @@ class JsonIngestJobStore:
 
     def mark_failed(self, job_id: str, error: str) -> None:
         self._update(job_id, status="failed", error=error)
+
+    def mark_canceled(self, job_id: str) -> None:
+        self._update(job_id, status="canceled", error=None)
 
     def _update(self, job_id: str, **changes: object) -> None:
         jobs = self._load()

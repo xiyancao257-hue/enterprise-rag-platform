@@ -143,6 +143,32 @@ def test_ingest_job_runner_skips_succeeded_job_duplicate_delivery(tmp_path: Path
     ]
 
 
+def test_ingest_job_runner_skips_canceled_job(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = InMemoryIngestJobStore()
+    job = store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
+    store.mark_canceled(job.job_id)
+    skips = []
+
+    IngestJobRunner(
+        job_store=store,
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(),
+        record_skip=lambda reason: skips.append(reason),
+    ).run(job.job_id)
+
+    skipped = store.get(job.job_id)
+    assert skipped is not None
+    assert skipped.status == "canceled"
+    assert skipped.attempt_count == 0
+    assert skips == ["canceled"]
+
+
 def test_ingest_job_runner_skips_running_job_duplicate_delivery(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
