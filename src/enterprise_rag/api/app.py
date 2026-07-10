@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
+from enterprise_rag.evaluation.readiness import ReadinessReport, build_readiness_report
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
 from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
@@ -244,6 +245,28 @@ class HealthResponse(BaseModel):
     vector_index_provider: str
 
 
+class ReadinessCheckResponse(BaseModel):
+    name: str
+    status: str
+    detail: str
+
+
+class ReadinessResponse(BaseModel):
+    request_id: str
+    index_present: bool
+    chunk_count: int
+    eval_present: bool
+    eval_case_count: int
+    recall_at_k: float | None
+    precision_at_k: float | None
+    mrr: float | None
+    query_log_present: bool
+    self_healing_draft_present: bool
+    self_healing_suggestions_present: bool
+    enterprise_checks: list[ReadinessCheckResponse]
+    recommendations: list[str]
+
+
 class IngestReportResponse(BaseModel):
     documents_loaded: int
     documents_new: int
@@ -357,6 +380,27 @@ def create_app(
             chunk_count=len(chunks),
             vector_index_provider=app.state.config.vector_index.provider,
         )
+
+    @app.get("/readiness", response_model=ReadinessResponse)
+    def readiness(
+        request: Request,
+        eval_path: str | None = None,
+        query_log_path: str | None = None,
+        self_healing_dir: str | None = None,
+        k: int = Query(default=5, ge=1, le=50),
+    ) -> ReadinessResponse:
+        _authorize_request(request, app.state.config)
+        chunks = JsonChunkStore(app.state.index_path).load()
+        report = build_readiness_report(
+            chunks,
+            index_path=app.state.index_path,
+            eval_path=Path(eval_path) if eval_path is not None else None,
+            query_log_path=Path(query_log_path) if query_log_path is not None else None,
+            self_healing_dir=Path(self_healing_dir) if self_healing_dir is not None else None,
+            config=app.state.config,
+            k=k,
+        )
+        return _readiness_response(request.state.request_id, report)
 
     @app.post("/query", response_model=QueryResponse)
     def query(payload: QueryRequest, request: Request) -> QueryResponse:
@@ -639,6 +683,27 @@ def _query_response(
         ),
         citations=[_citation_response(hit) for hit in answer.citations],
         trace=_trace_response(trace) if trace is not None else None,
+    )
+
+
+def _readiness_response(request_id: str, report: ReadinessReport) -> ReadinessResponse:
+    return ReadinessResponse(
+        request_id=request_id,
+        index_present=report.index_present,
+        chunk_count=report.chunk_count,
+        eval_present=report.eval_present,
+        eval_case_count=report.eval_case_count,
+        recall_at_k=report.recall_at_k,
+        precision_at_k=report.precision_at_k,
+        mrr=report.mrr,
+        query_log_present=report.query_log_present,
+        self_healing_draft_present=report.self_healing_draft_present,
+        self_healing_suggestions_present=report.self_healing_suggestions_present,
+        enterprise_checks=[
+            ReadinessCheckResponse(name=check.name, status=check.status, detail=check.detail)
+            for check in report.enterprise_checks
+        ],
+        recommendations=list(report.recommendations),
     )
 
 

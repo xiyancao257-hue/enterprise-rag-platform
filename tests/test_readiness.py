@@ -1,5 +1,14 @@
 import json
 
+from enterprise_rag.config import (
+    ApiSecurityConfig,
+    AppConfig,
+    AuditConfig,
+    CacheConfig,
+    IngestionConfig,
+    LeaseConfig,
+    VectorIndexConfig,
+)
 from enterprise_rag.evaluation.readiness import build_readiness_report, format_readiness_report
 from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
@@ -52,6 +61,14 @@ def test_build_readiness_report_with_eval_log_and_self_healing_artifacts(tmp_pat
         eval_path=eval_path,
         query_log_path=query_log_path,
         self_healing_dir=self_healing_dir,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(require_api_key=True),
+            audit=AuditConfig(enabled=True),
+            vector_index=VectorIndexConfig(provider="qdrant"),
+            cache=CacheConfig(provider="redis"),
+            leases=LeaseConfig(provider="redis"),
+            ingestion=IngestionConfig(allowed_source_roots=("data/raw",)),
+        ),
         k=1,
     )
 
@@ -67,6 +84,18 @@ def test_build_readiness_report_with_eval_log_and_self_healing_artifacts(tmp_pat
     assert report.log_analysis.total_queries == 1
     assert report.self_healing_draft_present is True
     assert report.self_healing_suggestions_present is True
+    assert {check.name: check.status for check in report.enterprise_checks} == {
+        "index": "pass",
+        "api_auth": "pass",
+        "audit_logging": "pass",
+        "vector_index": "pass",
+        "cache": "pass",
+        "leases": "pass",
+        "eval_coverage": "pass",
+        "query_logging": "pass",
+        "self_healing": "pass",
+        "ingestion_policy": "pass",
+    }
 
 
 def test_format_readiness_report_for_missing_artifacts() -> None:
@@ -88,5 +117,9 @@ def test_format_readiness_report_for_missing_artifacts() -> None:
     assert "- chunks: 0" in formatted
     assert "- eval file: missing" in formatted
     assert "- query log: missing" in formatted
+    assert "Enterprise Checks" in formatted
+    assert "- index: fail - no chunks indexed" in formatted
+    assert "- api_auth: warn - API key is not required" in formatted
     assert "Run ingestion before demo or deployment." in formatted
+    assert "Resolve failing enterprise readiness checks before production rollout." in formatted
     assert "Run pytest before demo or deployment." in formatted

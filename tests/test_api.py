@@ -36,6 +36,33 @@ def test_health_reports_index_status(tmp_path) -> None:
     }
 
 
+def test_readiness_reports_enterprise_checks(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="chunk1",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.get("/readiness")
+
+    payload = response.json()
+    checks = {check["name"]: check["status"] for check in payload["enterprise_checks"]}
+    assert response.status_code == 200
+    assert payload["request_id"] == response.headers[REQUEST_ID_HEADER]
+    assert payload["index_present"] is True
+    assert payload["chunk_count"] == 1
+    assert checks["index"] == "pass"
+    assert checks["api_auth"] == "warn"
+    assert checks["eval_coverage"] == "fail"
+    assert "Resolve failing enterprise readiness checks before production rollout." in payload["recommendations"]
+
+
 def test_query_returns_answer_plan_citations_and_request_id(tmp_path, caplog) -> None:
     index_path = tmp_path / "chunks.json"
     JsonChunkStore(index_path).save(
@@ -328,6 +355,25 @@ def test_health_remains_public_when_api_key_is_required(tmp_path) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
+
+
+def test_readiness_requires_api_key_when_auth_enabled(tmp_path) -> None:
+    app = create_app(
+        index_path=tmp_path / "missing.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    denied_response = client.get("/readiness")
+    allowed_response = client.get("/readiness", headers={API_KEY_HEADER: "correct-key"})
+
+    assert denied_response.status_code == 401
+    assert allowed_response.status_code == 200
 
 
 def test_query_rejects_missing_or_wrong_api_key(tmp_path) -> None:

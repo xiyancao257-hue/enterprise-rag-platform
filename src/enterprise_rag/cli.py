@@ -169,6 +169,7 @@ def main() -> None:
     readiness_parser.add_argument("--eval", type=Path, dest="eval_path")
     readiness_parser.add_argument("--query-log", type=Path)
     readiness_parser.add_argument("--self-healing-dir", type=Path)
+    readiness_parser.add_argument("--config", type=Path, help="JSON config file for production readiness checks")
     readiness_parser.add_argument("--k", type=int, default=5)
 
     args = parser.parse_args()
@@ -224,7 +225,7 @@ def main() -> None:
     elif args.command == "self-healing-report":
         self_healing_report(args.log_path, args.index, args.workdir, args.limit, args.suggestion_top_k)
     elif args.command == "readiness-report":
-        readiness_report(args.index, args.eval_path, args.query_log, args.self_healing_dir, args.k)
+        readiness_report(args.index, args.eval_path, args.query_log, args.self_healing_dir, args.config, args.k)
 
 
 def ingest(
@@ -498,15 +499,18 @@ def readiness_report(
     eval_path: Path | None,
     query_log_path: Path | None,
     self_healing_dir: Path | None,
+    config_path: Path | None,
     k: int,
 ) -> None:
     chunks = JsonChunkStore(index_path).load()
+    config = load_config(config_path)
     report = build_readiness_report(
         chunks,
         index_path=index_path,
         eval_path=eval_path,
         query_log_path=query_log_path,
         self_healing_dir=self_healing_dir,
+        config=config,
         k=k,
     )
     print(format_readiness_report(report, k=k))
