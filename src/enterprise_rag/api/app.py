@@ -425,9 +425,7 @@ def create_app(
     ) -> IngestJobResponse:
         auth_context = _authorize_request(request, app.state.config)
         tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
-        source_path = Path(payload.source_path)
-        if not source_path.exists():
-            raise HTTPException(status_code=400, detail="Ingest source path does not exist.")
+        source_path = _validate_ingest_source_path(Path(payload.source_path), app.state.config)
 
         job = app.state.ingest_jobs.create(
             source_path=str(source_path),
@@ -573,6 +571,24 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
 def _cost_prompt_approximation(query: str, citations: tuple[SearchHit, ...]) -> str:
     evidence = "\n".join(hit.chunk.text for hit in citations)
     return f"{query}\n{evidence}"
+
+
+def _validate_ingest_source_path(source_path: Path, config: AppConfig) -> Path:
+    resolved_source = source_path.resolve(strict=False)
+    allowed_roots = tuple(Path(root).resolve(strict=False) for root in config.ingestion.allowed_source_roots)
+    if allowed_roots and not any(_is_relative_to(resolved_source, root) for root in allowed_roots):
+        raise HTTPException(status_code=403, detail="Ingest source path is not allowed.")
+    if not resolved_source.exists():
+        raise HTTPException(status_code=400, detail="Ingest source path does not exist.")
+    return resolved_source
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _authorize_request(request: Request, config: AppConfig) -> AuthContext:

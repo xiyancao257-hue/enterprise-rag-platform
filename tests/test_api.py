@@ -5,7 +5,7 @@ from hashlib import sha256
 from fastapi.testclient import TestClient
 
 from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, create_app
-from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig
+from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig, IngestionConfig
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
 from enterprise_rag.observability.audit import JsonAuditLogger
@@ -787,6 +787,78 @@ def test_ingest_job_creation_writes_audit_event(tmp_path) -> None:
     assert audit_event["request_id"] == "req_ingest_audit_123"
     assert audit_event["attributes"]["source_path"] == str(raw_dir)
     assert audit_event["attributes"]["allowed_groups"] == ["security"]
+
+
+def test_ingest_job_allows_source_under_configured_root(tmp_path) -> None:
+    allowed_root = tmp_path / "allowed"
+    raw_dir = allowed_root / "raw"
+    raw_dir.mkdir(parents=True)
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(
+            index_path=tmp_path / "chunks.json",
+            config=AppConfig(
+                ingestion=IngestionConfig(allowed_source_roots=(str(allowed_root),)),
+            ),
+        )
+    )
+
+    response = client.post("/ingest-jobs", json={"source_path": str(raw_dir)})
+
+    assert response.status_code == 202
+    assert response.json()["source_path"] == str(raw_dir.resolve())
+
+
+def test_ingest_job_rejects_source_outside_configured_roots(tmp_path) -> None:
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside"
+    allowed_root.mkdir()
+    outside_root.mkdir()
+    outside_root.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(
+            index_path=tmp_path / "chunks.json",
+            config=AppConfig(
+                ingestion=IngestionConfig(allowed_source_roots=(str(allowed_root),)),
+            ),
+        )
+    )
+
+    response = client.post("/ingest-jobs", json={"source_path": str(outside_root)})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Ingest source path is not allowed."
+
+
+def test_ingest_job_rejects_path_traversal_outside_configured_roots(tmp_path) -> None:
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside"
+    allowed_root.mkdir()
+    outside_root.mkdir()
+    outside_root.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    traversal_path = allowed_root / ".." / "outside"
+    client = TestClient(
+        create_app(
+            index_path=tmp_path / "chunks.json",
+            config=AppConfig(
+                ingestion=IngestionConfig(allowed_source_roots=(str(allowed_root),)),
+            ),
+        )
+    )
+
+    response = client.post("/ingest-jobs", json={"source_path": str(traversal_path)})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Ingest source path is not allowed."
 
 
 def test_ingest_job_applies_tenant_metadata_from_header(tmp_path) -> None:

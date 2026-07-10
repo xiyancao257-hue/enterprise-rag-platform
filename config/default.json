@@ -25,6 +25,9 @@
     "running_timeout_seconds": 1800,
     "worker_poll_seconds": 5.0
   },
+  "ingestion": {
+    "allowed_source_roots": []
+  },
   "llm": {
     "provider": "stub",
     "model": "gpt-4.1-mini",

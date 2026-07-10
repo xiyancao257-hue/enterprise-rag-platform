@@ -49,6 +49,11 @@ class JobsConfig:
 
 
 @dataclass(frozen=True)
+class IngestionConfig:
+    allowed_source_roots: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     provider: str = "stub"
     model: str = "gpt-4.1-mini"
@@ -69,6 +74,7 @@ class AppConfig:
     api_security: ApiSecurityConfig = field(default_factory=ApiSecurityConfig)
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
     jobs: JobsConfig = field(default_factory=JobsConfig)
+    ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
 
@@ -90,6 +96,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     api_security_data = _section(data, "api_security")
     vector_index_data = _section(data, "vector_index")
     jobs_data = _section(data, "jobs")
+    ingestion_data = _section(data, "ingestion")
     llm_data = _section(data, "llm")
     audit_data = _section(data, "audit")
 
@@ -132,6 +139,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         jobs=JobsConfig(
             running_timeout_seconds=int(jobs_data.get("running_timeout_seconds", JobsConfig.running_timeout_seconds)),
             worker_poll_seconds=float(jobs_data.get("worker_poll_seconds", JobsConfig.worker_poll_seconds)),
+        ),
+        ingestion=IngestionConfig(
+            allowed_source_roots=tuple(
+                str(root) for root in ingestion_data.get("allowed_source_roots", IngestionConfig.allowed_source_roots)
+            ),
         ),
         llm=LLMConfig(
             provider=str(llm_data.get("provider", LLMConfig.provider)),

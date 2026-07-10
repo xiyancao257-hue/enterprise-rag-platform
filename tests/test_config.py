@@ -46,6 +46,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "running_timeout_seconds": 900,
                 "worker_poll_seconds": 2.5,
             },
+            "ingestion": {
+                "allowed_source_roots": ["data/raw", "/mnt/shared/rag"],
+            },
             "llm": {
                 "provider": "openai",
                 "model": "gpt-test",
@@ -76,6 +79,7 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.vector_index.url == "http://qdrant:6333"
     assert config.jobs.running_timeout_seconds == 900
     assert config.jobs.worker_poll_seconds == 2.5
+    assert config.ingestion.allowed_source_roots == ("data/raw", "/mnt/shared/rag")
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1
