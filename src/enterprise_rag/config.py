@@ -51,6 +51,8 @@ class JobsConfig:
 @dataclass(frozen=True)
 class IngestionConfig:
     allowed_source_roots: tuple[str, ...] = ()
+    allowed_extensions: tuple[str, ...] = (".txt", ".md")
+    max_file_bytes: int = 10_000_000
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             allowed_source_roots=tuple(
                 str(root) for root in ingestion_data.get("allowed_source_roots", IngestionConfig.allowed_source_roots)
             ),
+            allowed_extensions=tuple(
+                str(extension).lower()
+                for extension in ingestion_data.get("allowed_extensions", IngestionConfig.allowed_extensions)
+            ),
+            max_file_bytes=int(ingestion_data.get("max_file_bytes", IngestionConfig.max_file_bytes)),
         ),
         llm=LLMConfig(
             provider=str(llm_data.get("provider", LLMConfig.provider)),

@@ -26,7 +26,9 @@
     "worker_poll_seconds": 5.0
   },
   "ingestion": {
-    "allowed_source_roots": []
+    "allowed_source_roots": [],
+    "allowed_extensions": [".txt", ".md"],
+    "max_file_bytes": 10000000
   },
   "llm": {
     "provider": "stub",

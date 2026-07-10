@@ -48,6 +48,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
             },
             "ingestion": {
                 "allowed_source_roots": ["data/raw", "/mnt/shared/rag"],
+                "allowed_extensions": [".md", ".txt", ".html"],
+                "max_file_bytes": 2048,
             },
             "llm": {
                 "provider": "openai",
@@ -80,6 +82,8 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.jobs.running_timeout_seconds == 900
     assert config.jobs.worker_poll_seconds == 2.5
     assert config.ingestion.allowed_source_roots == ("data/raw", "/mnt/shared/rag")
+    assert config.ingestion.allowed_extensions == (".md", ".txt", ".html")
+    assert config.ingestion.max_file_bytes == 2048
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1

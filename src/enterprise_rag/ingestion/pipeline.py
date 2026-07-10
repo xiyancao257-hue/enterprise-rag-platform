@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from enterprise_rag.ingestion.loaders import load_documents
+from enterprise_rag.ingestion.loaders import load_documents_with_report
+from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -32,11 +33,13 @@ class IncrementalIngestPipeline:
         redactor: SensitiveDataRedactor | None = None,
         parser: StructureParser | None = None,
         chunker: StructureAwareChunker | None = None,
+        file_policy: IngestionFilePolicy | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
         self.parser = parser or StructureParser()
         self.chunker = chunker or StructureAwareChunker()
+        self.file_policy = file_policy or IngestionFilePolicy()
 
     def run(
         self,
@@ -48,9 +51,8 @@ class IncrementalIngestPipeline:
         ingest_scope = metadata_overrides.get("tenant_id", "")
         existing_chunks = store.load()
         existing_by_source = self._group_by_source(existing_chunks)
-        documents = [
-            self._with_metadata_overrides(document, metadata_overrides) for document in load_documents(source_path)
-        ]
+        load_result = load_documents_with_report(source_path, policy=self.file_policy)
+        documents = [self._with_metadata_overrides(document, metadata_overrides) for document in load_result.documents]
         current_sources = {self._source_key(document.metadata, document.source_path) for document in documents}
 
         next_chunks = [
@@ -62,7 +64,7 @@ class IncrementalIngestPipeline:
         documents_new = 0
         documents_updated = 0
         documents_unchanged = 0
-        documents_filtered = 0
+        documents_filtered = load_result.documents_filtered
         chunks_upserted: list[str] = []
         chunks_deleted: list[str] = []
 

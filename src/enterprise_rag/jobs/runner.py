@@ -7,6 +7,7 @@ from pathlib import Path
 from enterprise_rag.config import AppConfig
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
+from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
@@ -65,7 +66,7 @@ class IngestJobRunner:
         try:
             metadata_overrides = self._metadata_overrides(job)
             store = JsonChunkStore(self.index_path)
-            report = IncrementalIngestPipeline().run(
+            report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(self.config.ingestion)).run(
                 Path(job.source_path),
                 store,
                 metadata_overrides=metadata_overrides,

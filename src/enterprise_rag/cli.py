@@ -25,6 +25,7 @@ from enterprise_rag.evaluation.self_healing_workflow import (
 )
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
+from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
@@ -223,9 +224,12 @@ def ingest(
     sync_vectors: bool = False,
     allowed_groups: tuple[str, ...] = (),
 ) -> None:
+    config = load_config(config_path)
     store = JsonChunkStore(index_path)
     metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
-    report = IncrementalIngestPipeline().run(path, store, metadata_overrides=metadata_overrides)
+    report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(config.ingestion)).run(
+        path, store, metadata_overrides=metadata_overrides
+    )
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
     print(
         "Ingest report: "
@@ -236,7 +240,6 @@ def ingest(
         f"filtered={report.documents_filtered}"
     )
     if sync_vectors:
-        config = load_config(config_path)
         chunks_by_id = {chunk.id: chunk for chunk in store.load()}
         chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
         sync_report = VectorIndexSync().sync(

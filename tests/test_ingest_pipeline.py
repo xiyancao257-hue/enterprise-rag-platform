@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from enterprise_rag.ingestion.loaders import load_documents
+from enterprise_rag.ingestion.loaders import load_documents, load_documents_with_report
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
+from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import BlockType, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -25,6 +26,43 @@ def test_load_documents_reads_supported_files(tmp_path: Path) -> None:
     assert documents[0].metadata["extension"] == ".md"
     assert documents[0].metadata["filename"] == "guide.md"
     assert documents[0].metadata["content_hash"]
+
+
+def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text("# Guide\n\nHybrid retrieval notes.", encoding="utf-8")
+    raw_dir.joinpath("image.png").write_text("not a supported document", encoding="utf-8")
+    raw_dir.joinpath("large.txt").write_text("x" * 80, encoding="utf-8")
+
+    result = load_documents_with_report(
+        raw_dir,
+        policy=IngestionFilePolicy(allowed_extensions=(".md", ".txt"), max_file_bytes=50),
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].metadata["filename"] == "guide.md"
+    assert result.documents_filtered == 2
+
+
+def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    raw_dir.joinpath("diagram.png").write_text("not a supported document", encoding="utf-8")
+    raw_dir.joinpath("oversized.txt").write_text("x" * 150, encoding="utf-8")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline(
+        file_policy=IngestionFilePolicy(allowed_extensions=(".md", ".txt"), max_file_bytes=100)
+    ).run(raw_dir, store)
+
+    assert report.documents_loaded == 1
+    assert report.documents_filtered == 2
+    assert report.documents_new == 1
 
 
 def test_cleaner_filters_low_quality_documents() -> None:
