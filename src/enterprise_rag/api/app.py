@@ -383,6 +383,7 @@ def create_app(
             metadata_filters=mandatory_metadata_filters,
             top_k=top_k,
             index_path=app.state.index_path,
+            retrieval_profile=_query_cache_retrieval_profile(config),
         )
         cached_response = app.state.query_cache.get(query_cache_key)
         if isinstance(cached_response, dict):
@@ -604,6 +605,30 @@ def _query_response(
         citations=[_citation_response(hit) for hit in answer.citations],
         trace=_trace_response(trace) if trace is not None else None,
     )
+
+
+def _query_cache_retrieval_profile(config: AppConfig) -> dict[str, object]:
+    return {
+        "retrieval": {
+            "enable_graph": config.retrieval.enable_graph,
+            "graph_max_hops": config.retrieval.graph_max_hops,
+        },
+        "vector_index": {
+            "provider": config.vector_index.provider,
+            "collection_name": config.vector_index.collection_name,
+            "url": config.vector_index.url,
+        },
+        "embedding": {
+            "model_id": "hashing-embedding-v1",
+        },
+        "reranker": {
+            "profile": "lightweight-reranker-v1",
+        },
+        "answer_generator": {
+            "provider": config.llm.provider,
+            "model": config.llm.model,
+        },
+    }
 
 
 def _citation_response(hit: SearchHit) -> CitationResponse:

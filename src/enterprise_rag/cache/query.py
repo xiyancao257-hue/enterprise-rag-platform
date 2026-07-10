@@ -13,6 +13,7 @@ def build_query_cache_key(
     metadata_filters: dict[str, str],
     top_k: int,
     index_path: Path,
+    retrieval_profile: dict[str, object] | None = None,
 ) -> str:
     payload = {
         "query": query,
@@ -21,6 +22,7 @@ def build_query_cache_key(
         "metadata_filters": dict(sorted(metadata_filters.items())),
         "top_k": top_k,
         "index_version": index_version(index_path),
+        "retrieval_profile": retrieval_profile or {},
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return f"query:{hashlib.sha256(encoded.encode('utf-8')).hexdigest()}"

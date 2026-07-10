@@ -1,4 +1,5 @@
 from enterprise_rag.cache.in_memory import InMemoryCache
+from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.cache.redis_cache import RedisCache
 
 
@@ -60,3 +61,57 @@ def test_redis_cache_without_positive_ttl_uses_plain_set() -> None:
 
     assert client.set_calls == [("rag:query:abc", '{"answer":"ok"}')]
     assert cache.get("query:abc") == {"answer": "ok"}
+
+
+def test_query_cache_key_changes_when_retrieval_profile_changes(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text("[]", encoding="utf-8")
+    base = {
+        "query": "hybrid retrieval",
+        "tenant_id": "acme",
+        "user_groups": {"engineering"},
+        "metadata_filters": {"tenant_id": "acme"},
+        "top_k": 5,
+        "index_path": index_path,
+    }
+
+    graph_off = build_query_cache_key(
+        **base,
+        retrieval_profile={"retrieval": {"enable_graph": False, "graph_max_hops": 2}},
+    )
+    graph_on = build_query_cache_key(
+        **base,
+        retrieval_profile={"retrieval": {"enable_graph": True, "graph_max_hops": 2}},
+    )
+
+    assert graph_off != graph_on
+
+
+def test_query_cache_key_is_stable_for_different_profile_dict_order(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text("[]", encoding="utf-8")
+    base = {
+        "query": "hybrid retrieval",
+        "tenant_id": None,
+        "user_groups": {"support", "engineering"},
+        "metadata_filters": {"extension": ".md", "tenant_id": "acme"},
+        "top_k": 5,
+        "index_path": index_path,
+    }
+
+    first = build_query_cache_key(
+        **base,
+        retrieval_profile={
+            "vector_index": {"provider": "qdrant", "collection_name": "chunks"},
+            "retrieval": {"enable_graph": True, "graph_max_hops": 2},
+        },
+    )
+    second = build_query_cache_key(
+        **base,
+        retrieval_profile={
+            "retrieval": {"graph_max_hops": 2, "enable_graph": True},
+            "vector_index": {"collection_name": "chunks", "provider": "qdrant"},
+        },
+    )
+
+    assert first == second
