@@ -116,6 +116,124 @@ def test_query_completed_writes_audit_event(tmp_path) -> None:
     assert audit_event["attributes"]["user_groups"] == ["engineering"]
 
 
+def test_query_cache_reuses_response_for_same_security_context(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(index_path=index_path)
+    client = TestClient(app)
+
+    first_response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+    second_response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json()["request_id"] != first_response.json()["request_id"]
+    assert second_response.json()["answer"] == first_response.json()["answer"]
+    assert app.state.query_cache.hits == 1
+    assert app.state.query_cache.misses == 1
+
+
+def test_query_cache_is_tenant_scoped(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="acme",
+                document_id="doc1",
+                text="Retention policy for Acme is 90 days.",
+                metadata={"tenant_id": "acme"},
+            ),
+            Chunk(
+                id="globex",
+                document_id="doc2",
+                text="Retention policy for Globex is 7 years.",
+                metadata={"tenant_id": "globex"},
+            ),
+        ]
+    )
+    app = create_app(
+        index_path=index_path,
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_keys=(
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("acme-key"),
+                        allowed_tenants=("acme",),
+                    ),
+                    ApiKeyCredential(
+                        key_hash=_hash_test_key("globex-key"),
+                        allowed_tenants=("globex",),
+                    ),
+                ),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    acme_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "acme-key", TENANT_ID_HEADER: "acme"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+    globex_response = client.post(
+        "/query",
+        headers={API_KEY_HEADER: "globex-key", TENANT_ID_HEADER: "globex"},
+        json={"query": "retention policy", "top_k": 1},
+    )
+
+    assert acme_response.status_code == 200
+    assert globex_response.status_code == 200
+    assert acme_response.json()["tenant_id"] == "acme"
+    assert globex_response.json()["tenant_id"] == "globex"
+    assert acme_response.json()["citations"][0]["chunk_id"] == "acme"
+    assert globex_response.json()["citations"][0]["chunk_id"] == "globex"
+    assert app.state.query_cache.hits == 0
+    assert app.state.query_cache.misses == 2
+
+
+def test_query_cache_invalidates_when_index_version_changes(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="old",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(index_path=index_path)
+    client = TestClient(app)
+
+    first_response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="new",
+                document_id="doc2",
+                text="Hybrid retrieval now uses BM25, vectors, reranking, and compression.",
+            )
+        ]
+    )
+    second_response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["citations"][0]["chunk_id"] == "old"
+    assert second_response.json()["citations"][0]["chunk_id"] == "new"
+    assert app.state.query_cache.hits == 0
+    assert app.state.query_cache.misses == 2
+
+
 def test_query_returns_404_when_index_is_empty(tmp_path) -> None:
     client = TestClient(create_app(index_path=tmp_path / "missing.json"))
 

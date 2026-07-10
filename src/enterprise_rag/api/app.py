@@ -16,6 +16,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from enterprise_rag.cache.in_memory import InMemoryCache
+from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
@@ -271,6 +272,7 @@ def create_app(
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
     app.state.embedding_cache = InMemoryCache()
+    app.state.query_cache = InMemoryCache()
     app.state.audit_logger = audit_logger or (
         JsonAuditLogger(Path(config.audit.path)) if config.audit.enabled else NullAuditLogger()
     )
@@ -371,6 +373,32 @@ def create_app(
 
         config: AppConfig = app.state.config
         top_k = payload.top_k if payload.top_k is not None else config.retrieval.top_k
+        user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
+        mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
+        query_cache_key = build_query_cache_key(
+            query=payload.query,
+            tenant_id=tenant_id,
+            user_groups=user_groups,
+            metadata_filters=mandatory_metadata_filters,
+            top_k=top_k,
+            index_path=app.state.index_path,
+        )
+        cached_response = app.state.query_cache.get(query_cache_key)
+        if isinstance(cached_response, dict):
+            _log_event(
+                "query_cache_hit",
+                request_id=request.state.request_id,
+                tenant_id=tenant_id,
+                top_k=top_k,
+            )
+            return QueryResponse.model_validate(
+                {
+                    **cached_response,
+                    "request_id": request.state.request_id,
+                    "tenant_id": tenant_id,
+                    "trace": cached_response.get("trace") if payload.include_trace else None,
+                }
+            )
         pipeline = RagPipeline(
             chunks,
             enable_graph=config.retrieval.enable_graph,
@@ -381,8 +409,8 @@ def create_app(
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,
             top_k=top_k,
-            user_groups=set(payload.user_groups) or set(config.security.default_user_groups),
-            mandatory_metadata_filters=_tenant_metadata_filter(tenant_id),
+            user_groups=user_groups,
+            mandatory_metadata_filters=mandatory_metadata_filters,
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
         app.state.metrics.record_query_success(latency_ms=latency_ms, citation_count=len(answer.citations))
@@ -426,7 +454,15 @@ def create_app(
                 },
             )
         )
-        return _query_response(request.state.request_id, tenant_id, answer, trace if payload.include_trace else None)
+        response = _query_response(
+            request.state.request_id,
+            tenant_id,
+            answer,
+            trace if payload.include_trace else None,
+        )
+        cache_response = _query_response(request.state.request_id, tenant_id, answer, trace)
+        app.state.query_cache.set(query_cache_key, cache_response.model_dump(), ttl_seconds=300)
+        return response
 
     @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)
     def create_ingest_job(
