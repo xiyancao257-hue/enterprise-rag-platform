@@ -20,6 +20,7 @@ class IngestJobRecord:
     tenant_id: str | None
     allowed_groups: tuple[str, ...]
     sync_vectors: bool
+    dry_run: bool
     request_id: str
     created_at: float
     updated_at: float
@@ -38,6 +39,7 @@ class IngestJobStore(Protocol):
         sync_vectors: bool,
         request_id: str,
         allowed_groups: tuple[str, ...] = (),
+        dry_run: bool = False,
     ) -> IngestJobRecord:
         """Create a queued ingest job."""
 
@@ -74,8 +76,17 @@ class InMemoryIngestJobStore:
         sync_vectors: bool,
         request_id: str,
         allowed_groups: tuple[str, ...] = (),
+        dry_run: bool = False,
     ) -> IngestJobRecord:
-        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now(), allowed_groups=allowed_groups)
+        job = _new_job(
+            source_path,
+            tenant_id,
+            sync_vectors,
+            request_id,
+            self.now(),
+            allowed_groups=allowed_groups,
+            dry_run=dry_run,
+        )
         self.jobs[job.job_id] = job
         return job
 
@@ -119,9 +130,18 @@ class JsonIngestJobStore:
         sync_vectors: bool,
         request_id: str,
         allowed_groups: tuple[str, ...] = (),
+        dry_run: bool = False,
     ) -> IngestJobRecord:
         jobs = self._load()
-        job = _new_job(source_path, tenant_id, sync_vectors, request_id, self.now(), allowed_groups=allowed_groups)
+        job = _new_job(
+            source_path,
+            tenant_id,
+            sync_vectors,
+            request_id,
+            self.now(),
+            allowed_groups=allowed_groups,
+            dry_run=dry_run,
+        )
         jobs[job.job_id] = job
         self._save(jobs)
         return job
@@ -176,6 +196,7 @@ def _new_job(
     request_id: str,
     now: float,
     allowed_groups: tuple[str, ...] = (),
+    dry_run: bool = False,
 ) -> IngestJobRecord:
     return IngestJobRecord(
         job_id=f"job_{uuid4().hex}",
@@ -184,6 +205,7 @@ def _new_job(
         tenant_id=tenant_id,
         allowed_groups=allowed_groups,
         sync_vectors=sync_vectors,
+        dry_run=dry_run,
         request_id=request_id,
         created_at=now,
         updated_at=now,
@@ -213,6 +235,7 @@ def _job_from_dict(item: dict[str, object]) -> IngestJobRecord:
         tenant_id=str(item["tenant_id"]) if item.get("tenant_id") is not None else None,
         allowed_groups=tuple(str(group) for group in item.get("allowed_groups", ())),
         sync_vectors=bool(item["sync_vectors"]),
+        dry_run=bool(item.get("dry_run", False)),
         request_id=str(item["request_id"]),
         created_at=float(item["created_at"]),
         updated_at=float(item["updated_at"]),
@@ -241,4 +264,5 @@ def _report_from_dict(item: dict[str, object]) -> IngestReport:
             for value in item.get("filtered_documents", ())
             if isinstance(value, dict)
         ),
+        dry_run=bool(item.get("dry_run", False)),
     )

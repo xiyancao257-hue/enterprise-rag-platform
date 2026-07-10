@@ -760,6 +760,30 @@ def test_ingest_job_indexes_documents_and_records_status(tmp_path) -> None:
     assert chunks[0].metadata["source_path"] == str(source)
 
 
+def test_ingest_job_dry_run_reports_without_writing_index(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "chunks.json"
+    client = TestClient(create_app(index_path=index_path))
+
+    create_response = client.post("/ingest-jobs", json={"source_path": str(raw_dir), "dry_run": True})
+
+    job_id = create_response.json()["job_id"]
+    status_response = client.get(f"/ingest-jobs/{job_id}")
+    payload = status_response.json()
+    assert create_response.status_code == 202
+    assert create_response.json()["dry_run"] is True
+    assert status_response.status_code == 200
+    assert payload["dry_run"] is True
+    assert payload["report"]["dry_run"] is True
+    assert payload["report"]["documents_new"] == 1
+    assert not index_path.exists()
+
+
 def test_ingest_job_creation_writes_audit_event(tmp_path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

@@ -24,9 +24,22 @@ def test_json_ingest_job_store_persists_created_jobs(tmp_path: Path) -> None:
     assert reloaded.tenant_id == "acme"
     assert reloaded.allowed_groups == ("legal", "security")
     assert reloaded.sync_vectors is True
+    assert reloaded.dry_run is False
     assert reloaded.attempt_count == 0
     assert reloaded.max_attempts == 3
     assert reloaded.created_at == 100.0
+
+
+def test_json_ingest_job_store_persists_dry_run_jobs(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs" / "ingest_jobs.json"
+    store = JsonIngestJobStore(store_path)
+
+    job = store.create("data/raw", tenant_id=None, sync_vectors=True, request_id="req_123", dry_run=True)
+    reloaded = JsonIngestJobStore(store_path).get(job.job_id)
+
+    assert reloaded is not None
+    assert reloaded.dry_run is True
+    assert reloaded.sync_vectors is True
 
 
 def test_json_ingest_job_store_lists_jobs(tmp_path: Path) -> None:

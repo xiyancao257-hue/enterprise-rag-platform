@@ -70,9 +70,10 @@ class IngestJobRunner:
                 Path(job.source_path),
                 store,
                 metadata_overrides=metadata_overrides,
+                dry_run=job.dry_run,
             )
             vector_sync = None
-            if job.sync_vectors:
+            if job.sync_vectors and not job.dry_run:
                 chunks_by_id = {chunk.id: chunk for chunk in store.load()}
                 chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
                 sync_report = VectorIndexSync().sync(
@@ -93,6 +94,7 @@ class IngestJobRunner:
                 job_id=job.job_id,
                 tenant_id=job.tenant_id,
                 chunks_indexed=report.chunks_indexed,
+                dry_run=job.dry_run,
                 latency_ms=round(latency_ms, 2),
             )
         except Exception as exc:

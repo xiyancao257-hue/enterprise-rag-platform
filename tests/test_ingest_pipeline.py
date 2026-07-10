@@ -245,6 +245,24 @@ def test_incremental_ingest_reuses_unchanged_chunks(tmp_path: Path) -> None:
     assert second_chunks == first_chunks
 
 
+def test_incremental_ingest_dry_run_does_not_write_index(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "chunks.json"
+    store = JsonChunkStore(index_path)
+
+    report = IncrementalIngestPipeline().run(raw_dir, store, dry_run=True)
+
+    assert report.dry_run is True
+    assert report.documents_new == 1
+    assert len(report.chunks_upserted) == 1
+    assert not index_path.exists()
+
+
 def test_incremental_ingest_replaces_changed_document_chunks(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

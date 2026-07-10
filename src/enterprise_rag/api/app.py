@@ -156,6 +156,7 @@ class QueryRequest(BaseModel):
 class IngestJobRequest(BaseModel):
     source_path: str = Field(min_length=1)
     sync_vectors: bool = False
+    dry_run: bool = False
     allowed_groups: list[str] = Field(default_factory=list)
 
 
@@ -228,6 +229,7 @@ class IngestReportResponse(BaseModel):
     chunks_upserted: list[str]
     chunks_deleted: list[str]
     filtered_documents: list[dict[str, str]]
+    dry_run: bool
 
 
 class IngestJobResponse(BaseModel):
@@ -238,6 +240,7 @@ class IngestJobResponse(BaseModel):
     tenant_id: str | None = None
     allowed_groups: list[str]
     sync_vectors: bool
+    dry_run: bool
     attempt_count: int
     max_attempts: int
     report: IngestReportResponse | None = None
@@ -434,6 +437,7 @@ def create_app(
             tenant_id=tenant_id,
             allowed_groups=tuple(payload.allowed_groups),
             sync_vectors=payload.sync_vectors,
+            dry_run=payload.dry_run,
             request_id=request.state.request_id,
         )
         app.state.metrics.record_ingest_job_created()
@@ -448,6 +452,7 @@ def create_app(
                     "job_id": job.job_id,
                     "source_path": str(source_path),
                     "sync_vectors": payload.sync_vectors,
+                    "dry_run": payload.dry_run,
                     "allowed_groups": payload.allowed_groups,
                 },
             )
@@ -458,6 +463,7 @@ def create_app(
             job_id=job.job_id,
             tenant_id=tenant_id,
             sync_vectors=payload.sync_vectors,
+            dry_run=payload.dry_run,
         )
         return _ingest_job_response(request.state.request_id, job)
 
@@ -548,6 +554,7 @@ def _ingest_job_response(request_id: str, job: IngestJobRecord) -> IngestJobResp
         tenant_id=job.tenant_id,
         allowed_groups=list(job.allowed_groups),
         sync_vectors=job.sync_vectors,
+        dry_run=job.dry_run,
         attempt_count=job.attempt_count,
         max_attempts=job.max_attempts,
         report=_ingest_report_response(job.report) if job.report is not None else None,
@@ -571,6 +578,7 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         filtered_documents=[
             {"source_path": item.source_path, "reason": item.reason} for item in report.filtered_documents
         ],
+        dry_run=report.dry_run,
     )
 
 

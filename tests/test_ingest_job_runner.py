@@ -43,6 +43,28 @@ def test_ingest_job_runner_marks_job_succeeded_and_indexes_chunks(tmp_path: Path
     assert events[0][0] == "ingest_job_completed"
 
 
+def test_ingest_job_runner_dry_run_does_not_write_index(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "chunks.json"
+    store = InMemoryIngestJobStore()
+    job = store.create(str(raw_dir), tenant_id=None, sync_vectors=True, request_id="req_123", dry_run=True)
+
+    IngestJobRunner(job_store=store, index_path=index_path, config=AppConfig()).run(job.job_id)
+
+    finished = store.get(job.job_id)
+    assert finished is not None
+    assert finished.status == "succeeded"
+    assert finished.report is not None
+    assert finished.report.dry_run is True
+    assert finished.vector_sync is None
+    assert not index_path.exists()
+
+
 def test_ingest_job_runner_marks_job_failed_and_records_failure(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

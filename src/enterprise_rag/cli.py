@@ -50,6 +50,11 @@ def main() -> None:
     ingest_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     ingest_parser.add_argument("--config", type=Path, help="JSON config file for vector index settings")
     ingest_parser.add_argument("--sync-vectors", action="store_true", help="Sync changed chunks to the vector index")
+    ingest_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview ingest changes without writing the index",
+    )
     ingest_parser.add_argument("--allowed-group", action="append", default=None, help="Allowed group for ingested docs")
 
     run_job_parser = subparsers.add_parser("run-job", help="Run one queued ingest job from the persistent job store")
@@ -165,7 +170,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "ingest":
-        ingest(args.path, args.index, args.config, args.sync_vectors, tuple(args.allowed_group or ()))
+        ingest(args.path, args.index, args.config, args.sync_vectors, tuple(args.allowed_group or ()), args.dry_run)
     elif args.command == "run-job":
         run_job(args.job_id, args.jobs, args.index, args.config)
     elif args.command == "worker":
@@ -223,13 +228,16 @@ def ingest(
     config_path: Path | None = None,
     sync_vectors: bool = False,
     allowed_groups: tuple[str, ...] = (),
+    dry_run: bool = False,
 ) -> None:
     config = load_config(config_path)
     store = JsonChunkStore(index_path)
     metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
     report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(config.ingestion)).run(
-        path, store, metadata_overrides=metadata_overrides
+        path, store, metadata_overrides=metadata_overrides, dry_run=dry_run
     )
+    if dry_run:
+        print("Dry run: index was not written.")
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
     print(
         "Ingest report: "
@@ -239,7 +247,7 @@ def ingest(
         f"deleted={report.documents_deleted}, "
         f"filtered={report.documents_filtered}"
     )
-    if sync_vectors:
+    if sync_vectors and not dry_run:
         chunks_by_id = {chunk.id: chunk for chunk in store.load()}
         chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
         sync_report = VectorIndexSync().sync(

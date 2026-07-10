@@ -45,6 +45,22 @@ def test_ingest_cli_can_sync_changed_chunks_to_vector_index(
     assert RecordingVectorSync.calls[0][2] == []
 
 
+def test_ingest_cli_dry_run_does_not_write_index(tmp_path: Path, capsys: object) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "chunks.json"
+
+    cli.ingest(raw_dir, index_path, dry_run=True)
+
+    output = capsys.readouterr().out
+    assert "Dry run: index was not written." in output
+    assert not index_path.exists()
+
+
 def test_run_job_cli_executes_persisted_ingest_job(tmp_path: Path, capsys: object) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

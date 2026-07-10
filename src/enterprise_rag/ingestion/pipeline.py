@@ -28,6 +28,7 @@ class IngestReport:
     chunks_deleted: tuple[str, ...] = ()
     filter_reasons: dict[str, int] = field(default_factory=dict)
     filtered_documents: tuple[FilteredDocument, ...] = ()
+    dry_run: bool = False
 
 
 class IncrementalIngestPipeline:
@@ -50,6 +51,7 @@ class IncrementalIngestPipeline:
         source_path: Path,
         store: JsonChunkStore,
         metadata_overrides: dict[str, str] | None = None,
+        dry_run: bool = False,
     ) -> IngestReport:
         metadata_overrides = metadata_overrides or {}
         ingest_scope = metadata_overrides.get("tenant_id", "")
@@ -104,7 +106,8 @@ class IncrementalIngestPipeline:
         for source in deleted_sources:
             chunks_deleted.extend(chunk.id for chunk in existing_by_source[source])
         documents_deleted = len(deleted_sources)
-        store.save(next_chunks)
+        if not dry_run:
+            store.save(next_chunks)
         return IngestReport(
             documents_loaded=len(documents),
             documents_new=documents_new,
@@ -117,6 +120,7 @@ class IncrementalIngestPipeline:
             chunks_deleted=tuple(chunks_deleted),
             filter_reasons=filter_reasons,
             filtered_documents=tuple(filtered_documents),
+            dry_run=dry_run,
         )
 
     def _process_document(self, document: Document) -> list[Chunk]:
