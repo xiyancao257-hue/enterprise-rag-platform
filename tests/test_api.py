@@ -4,7 +4,7 @@ from hashlib import sha256
 
 from fastapi.testclient import TestClient
 
-from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, create_app
+from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, MetricsCollector, create_app
 from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig, IngestionConfig
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
@@ -273,6 +273,8 @@ def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
     assert "enterprise_rag_query_estimated_input_tokens_total" in metrics
     assert "enterprise_rag_query_estimated_output_tokens_total" in metrics
     assert "enterprise_rag_query_estimated_cost_usd_sum" in metrics
+    assert "enterprise_rag_query_cache_hits_total 0" in metrics
+    assert "enterprise_rag_query_cache_misses_total 1" in metrics
 
 
 def test_metrics_records_failed_query(tmp_path) -> None:
@@ -283,6 +285,37 @@ def test_metrics_records_failed_query(tmp_path) -> None:
     metrics = client.get("/metrics").text
     assert "enterprise_rag_query_requests_total 1" in metrics
     assert "enterprise_rag_query_failures_total 1" in metrics
+
+
+def test_metrics_records_query_cache_hits(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+    client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    metrics = client.get("/metrics").text
+    assert "enterprise_rag_query_cache_hits_total 1" in metrics
+    assert "enterprise_rag_query_cache_misses_total 1" in metrics
+
+
+def test_metrics_renders_ingest_skip_reason_counts() -> None:
+    metrics = MetricsCollector()
+
+    metrics.record_ingest_job_skip("distributed_lease")
+
+    rendered = metrics.render_prometheus()
+    assert "enterprise_rag_ingest_job_skipped_total 1" in rendered
+    assert "enterprise_rag_ingest_job_skipped_reason_distributed_lease_total 1" in rendered
 
 
 def test_health_remains_public_when_api_key_is_required(tmp_path) -> None:
@@ -1358,6 +1391,8 @@ def test_metrics_reports_ingest_job_success_counts(tmp_path) -> None:
     assert "enterprise_rag_ingest_jobs_total 1" in metrics
     assert "enterprise_rag_ingest_job_success_total 1" in metrics
     assert "enterprise_rag_ingest_job_latency_ms_count 1" in metrics
+    assert "enterprise_rag_lease_acquire_success_total 1" in metrics
+    assert "enterprise_rag_lease_acquire_failures_total 0" in metrics
 
 
 def _hash_test_key(api_key: str) -> str:

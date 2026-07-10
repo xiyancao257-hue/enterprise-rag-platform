@@ -223,12 +223,14 @@ def test_ingest_job_runner_skips_when_distributed_lease_is_held(tmp_path: Path) 
     store = InMemoryIngestJobStore()
     job = store.create(str(raw_dir), tenant_id=None, sync_vectors=False, request_id="req_123")
     skips = []
+    lease_failures = []
 
     IngestJobRunner(
         job_store=store,
         index_path=tmp_path / "chunks.json",
         config=AppConfig(),
         record_skip=lambda reason: skips.append(reason),
+        record_lease_acquire_failure=lambda: lease_failures.append("failed"),
         lease_store=DenyingLeaseStore(),
     ).run(job.job_id)
 
@@ -237,6 +239,7 @@ def test_ingest_job_runner_skips_when_distributed_lease_is_held(tmp_path: Path) 
     assert skipped.status == "queued"
     assert skipped.attempt_count == 0
     assert skips == ["distributed_lease"]
+    assert lease_failures == ["failed"]
 
 
 def test_ingest_job_runner_skips_running_job_duplicate_delivery(tmp_path: Path) -> None:

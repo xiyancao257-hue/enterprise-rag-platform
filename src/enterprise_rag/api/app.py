@@ -84,13 +84,18 @@ class MetricsCollector:
         self.query_estimated_input_tokens_total = 0
         self.query_estimated_output_tokens_total = 0
         self.query_estimated_cost_usd_sum = 0.0
+        self.query_cache_hits_total = 0
+        self.query_cache_misses_total = 0
         self.ingest_jobs_total = 0
         self.ingest_job_success_total = 0
         self.ingest_job_failures_total = 0
         self.ingest_job_skipped_total = 0
+        self.ingest_job_skips_by_reason: dict[str, int] = {}
         self.ingest_job_retry_exhausted_total = 0
         self.ingest_job_latency_ms_sum = 0.0
         self.ingest_job_latency_ms_count = 0
+        self.lease_acquire_success_total = 0
+        self.lease_acquire_failures_total = 0
 
     def record_http_request(self) -> None:
         self.http_requests_total += 1
@@ -110,6 +115,12 @@ class MetricsCollector:
         self.query_requests_total += 1
         self.query_failures_total += 1
 
+    def record_query_cache_hit(self) -> None:
+        self.query_cache_hits_total += 1
+
+    def record_query_cache_miss(self) -> None:
+        self.query_cache_misses_total += 1
+
     def record_ingest_job_created(self) -> None:
         self.ingest_jobs_total += 1
 
@@ -123,9 +134,16 @@ class MetricsCollector:
 
     def record_ingest_job_skip(self, reason: str) -> None:
         self.ingest_job_skipped_total += 1
+        self.ingest_job_skips_by_reason[reason] = self.ingest_job_skips_by_reason.get(reason, 0) + 1
 
     def record_ingest_job_retry_exhausted(self) -> None:
         self.ingest_job_retry_exhausted_total += 1
+
+    def record_lease_acquire_success(self) -> None:
+        self.lease_acquire_success_total += 1
+
+    def record_lease_acquire_failure(self) -> None:
+        self.lease_acquire_failures_total += 1
 
     def render_prometheus(self) -> str:
         metrics = {
@@ -138,6 +156,8 @@ class MetricsCollector:
             "enterprise_rag_query_estimated_input_tokens_total": self.query_estimated_input_tokens_total,
             "enterprise_rag_query_estimated_output_tokens_total": self.query_estimated_output_tokens_total,
             "enterprise_rag_query_estimated_cost_usd_sum": round(self.query_estimated_cost_usd_sum, 8),
+            "enterprise_rag_query_cache_hits_total": self.query_cache_hits_total,
+            "enterprise_rag_query_cache_misses_total": self.query_cache_misses_total,
             "enterprise_rag_ingest_jobs_total": self.ingest_jobs_total,
             "enterprise_rag_ingest_job_success_total": self.ingest_job_success_total,
             "enterprise_rag_ingest_job_failures_total": self.ingest_job_failures_total,
@@ -145,7 +165,11 @@ class MetricsCollector:
             "enterprise_rag_ingest_job_retry_exhausted_total": self.ingest_job_retry_exhausted_total,
             "enterprise_rag_ingest_job_latency_ms_sum": round(self.ingest_job_latency_ms_sum, 4),
             "enterprise_rag_ingest_job_latency_ms_count": self.ingest_job_latency_ms_count,
+            "enterprise_rag_lease_acquire_success_total": self.lease_acquire_success_total,
+            "enterprise_rag_lease_acquire_failures_total": self.lease_acquire_failures_total,
         }
+        for reason, count in sorted(self.ingest_job_skips_by_reason.items()):
+            metrics[f"enterprise_rag_ingest_job_skipped_reason_{_metric_suffix(reason)}_total"] = count
         return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
 
 
@@ -257,6 +281,10 @@ def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
 
+def _metric_suffix(value: str) -> str:
+    return "".join(character if character.isalnum() else "_" for character in value.lower()).strip("_") or "unknown"
+
+
 def create_app(
     index_path: Path = DEFAULT_INDEX,
     config_path: Path | None = None,
@@ -287,6 +315,8 @@ def create_app(
         record_success=app.state.metrics.record_ingest_job_success,
         record_skip=app.state.metrics.record_ingest_job_skip,
         record_retry_exhausted=app.state.metrics.record_ingest_job_retry_exhausted,
+        record_lease_acquire_success=app.state.metrics.record_lease_acquire_success,
+        record_lease_acquire_failure=app.state.metrics.record_lease_acquire_failure,
         log_event=_log_event,
         embedding_cache=app.state.embedding_cache,
         embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
@@ -390,6 +420,7 @@ def create_app(
         )
         cached_response = app.state.query_cache.get(query_cache_key)
         if isinstance(cached_response, dict):
+            app.state.metrics.record_query_cache_hit()
             _log_event(
                 "query_cache_hit",
                 request_id=request.state.request_id,
@@ -404,6 +435,7 @@ def create_app(
                     "trace": cached_response.get("trace") if payload.include_trace else None,
                 }
             )
+        app.state.metrics.record_query_cache_miss()
         pipeline = RagPipeline(
             chunks,
             enable_graph=config.retrieval.enable_graph,

@@ -30,6 +30,8 @@ class IngestJobRunner:
         record_success: Callable[[float], None] | None = None,
         record_skip: Callable[[str], None] | None = None,
         record_retry_exhausted: Callable[[], None] | None = None,
+        record_lease_acquire_success: Callable[[], None] | None = None,
+        record_lease_acquire_failure: Callable[[], None] | None = None,
         log_event: Callable[..., None] | None = None,
         now: Callable[[], float] | None = None,
         worker_id: str | None = None,
@@ -44,6 +46,8 @@ class IngestJobRunner:
         self.record_success = record_success or (lambda latency_ms: None)
         self.record_skip = record_skip or (lambda reason: None)
         self.record_retry_exhausted = record_retry_exhausted or (lambda: None)
+        self.record_lease_acquire_success = record_lease_acquire_success or (lambda: None)
+        self.record_lease_acquire_failure = record_lease_acquire_failure or (lambda: None)
         self.log_event = log_event or (lambda event, **fields: None)
         self.now = now or time.time
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
@@ -78,8 +82,10 @@ class IngestJobRunner:
 
         lease_name = f"ingest-job:{job_id}"
         if not self.lease_store.acquire(lease_name, self.worker_id, self.config.jobs.running_timeout_seconds):
+            self.record_lease_acquire_failure()
             self._skip_job(job, reason="distributed_lease")
             return
+        self.record_lease_acquire_success()
 
         started_at = time.perf_counter()
         try:
