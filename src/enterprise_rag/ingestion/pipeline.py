@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from enterprise_rag.ingestion.loaders import load_documents_with_report
+from enterprise_rag.ingestion.loaders import FilteredDocument, load_documents_with_report
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
@@ -27,6 +27,7 @@ class IngestReport:
     chunks_upserted: tuple[str, ...] = ()
     chunks_deleted: tuple[str, ...] = ()
     filter_reasons: dict[str, int] = field(default_factory=dict)
+    filtered_documents: tuple[FilteredDocument, ...] = ()
 
 
 class IncrementalIngestPipeline:
@@ -69,6 +70,7 @@ class IncrementalIngestPipeline:
         documents_unchanged = 0
         documents_filtered = load_result.documents_filtered
         filter_reasons = dict(load_result.filter_reasons)
+        filtered_documents = list(load_result.filtered_documents)
         chunks_upserted: list[str] = []
         chunks_deleted: list[str] = []
 
@@ -83,6 +85,9 @@ class IncrementalIngestPipeline:
             if not processed_chunks:
                 documents_filtered += 1
                 self._count_filter_reason(filter_reasons, FILTER_LOW_QUALITY_TEXT)
+                filtered_documents.append(
+                    FilteredDocument(source_path=document.source_path, reason=FILTER_LOW_QUALITY_TEXT)
+                )
                 chunks_deleted.extend(chunk.id for chunk in previous_chunks)
             elif previous_chunks:
                 documents_updated += 1
@@ -111,6 +116,7 @@ class IncrementalIngestPipeline:
             chunks_upserted=tuple(chunks_upserted),
             chunks_deleted=tuple(chunks_deleted),
             filter_reasons=filter_reasons,
+            filtered_documents=tuple(filtered_documents),
         )
 
     def _process_document(self, document: Document) -> list[Chunk]:

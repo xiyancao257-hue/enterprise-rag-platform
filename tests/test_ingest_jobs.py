@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from enterprise_rag.ingestion.loaders import FilteredDocument
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 
@@ -57,6 +58,8 @@ def test_json_ingest_job_store_persists_status_updates(tmp_path: Path) -> None:
             chunks_indexed=5,
             chunks_upserted=("chunk_new",),
             chunks_deleted=("chunk_old",),
+            filter_reasons={"unsupported_extension": 1},
+            filtered_documents=(FilteredDocument(source_path="data/raw/image.png", reason="unsupported_extension"),),
         ),
         vector_sync={"vectors_upserted": 1, "vectors_deleted": 1},
     )
@@ -69,6 +72,10 @@ def test_json_ingest_job_store_persists_status_updates(tmp_path: Path) -> None:
     assert reloaded.report is not None
     assert reloaded.report.chunks_upserted == ("chunk_new",)
     assert reloaded.report.chunks_deleted == ("chunk_old",)
+    assert reloaded.report.filter_reasons == {"unsupported_extension": 1}
+    assert reloaded.report.filtered_documents == (
+        FilteredDocument(source_path="data/raw/image.png", reason="unsupported_extension"),
+    )
     assert reloaded.vector_sync == {"vectors_upserted": 1, "vectors_deleted": 1}
 
 

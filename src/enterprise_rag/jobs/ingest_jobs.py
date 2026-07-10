@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from enterprise_rag.ingestion.loaders import FilteredDocument
 from enterprise_rag.ingestion.pipeline import IngestReport
 
 
@@ -235,4 +236,9 @@ def _report_from_dict(item: dict[str, object]) -> IngestReport:
         chunks_upserted=tuple(str(value) for value in item.get("chunks_upserted", ())),
         chunks_deleted=tuple(str(value) for value in item.get("chunks_deleted", ())),
         filter_reasons={str(key): int(value) for key, value in item.get("filter_reasons", {}).items()},
+        filtered_documents=tuple(
+            FilteredDocument(source_path=str(value["source_path"]), reason=str(value["reason"]))
+            for value in item.get("filtered_documents", ())
+            if isinstance(value, dict)
+        ),
     )

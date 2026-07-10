@@ -12,10 +12,17 @@ FILTER_EMPTY_TEXT = "empty_text"
 
 
 @dataclass(frozen=True)
+class FilteredDocument:
+    source_path: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class LoadDocumentsResult:
     documents: tuple[Document, ...]
     documents_filtered: int
     filter_reasons: dict[str, int]
+    filtered_documents: tuple[FilteredDocument, ...] = ()
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -34,15 +41,18 @@ def load_documents_with_report(
 
     documents: list[Document] = []
     filter_reasons: dict[str, int] = {}
+    filtered_documents: list[FilteredDocument] = []
     for file in files:
         rejection_reason = policy.rejection_reason(file)
         if rejection_reason is not None:
             _count_filter_reason(filter_reasons, rejection_reason)
+            filtered_documents.append(FilteredDocument(source_path=str(file), reason=rejection_reason))
             continue
         raw_text = file.read_text(encoding="utf-8", errors="ignore")
         text = normalize_text(raw_text)
         if not text:
             _count_filter_reason(filter_reasons, FILTER_EMPTY_TEXT)
+            filtered_documents.append(FilteredDocument(source_path=str(file), reason=FILTER_EMPTY_TEXT))
             continue
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         doc_id = hashlib.sha256(str(file.resolve()).encode("utf-8")).hexdigest()[:16]
@@ -58,6 +68,7 @@ def load_documents_with_report(
         documents=tuple(documents),
         documents_filtered=sum(filter_reasons.values()),
         filter_reasons=filter_reasons,
+        filtered_documents=tuple(filtered_documents),
     )
 
 

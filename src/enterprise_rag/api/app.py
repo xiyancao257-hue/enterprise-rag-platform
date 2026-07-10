@@ -227,6 +227,7 @@ class IngestReportResponse(BaseModel):
     chunks_indexed: int
     chunks_upserted: list[str]
     chunks_deleted: list[str]
+    filtered_documents: list[dict[str, str]]
 
 
 class IngestJobResponse(BaseModel):
@@ -567,6 +568,9 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         chunks_indexed=report.chunks_indexed,
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),
+        filtered_documents=[
+            {"source_path": item.source_path, "reason": item.reason} for item in report.filtered_documents
+        ],
     )
 
 

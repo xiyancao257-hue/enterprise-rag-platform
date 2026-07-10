@@ -47,6 +47,10 @@ def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> N
         FILTER_UNSUPPORTED_EXTENSION: 1,
         FILTER_FILE_TOO_LARGE: 1,
     }
+    assert [(item.source_path, item.reason) for item in result.filtered_documents] == [
+        (str(raw_dir / "image.png"), FILTER_UNSUPPORTED_EXTENSION),
+        (str(raw_dir / "large.txt"), FILTER_FILE_TOO_LARGE),
+    ]
 
 
 def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path) -> None:
@@ -70,6 +74,10 @@ def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path
         FILTER_UNSUPPORTED_EXTENSION: 1,
         FILTER_FILE_TOO_LARGE: 1,
     }
+    assert [(item.source_path, item.reason) for item in report.filtered_documents] == [
+        (str(raw_dir / "diagram.png"), FILTER_UNSUPPORTED_EXTENSION),
+        (str(raw_dir / "oversized.txt"), FILTER_FILE_TOO_LARGE),
+    ]
     assert report.documents_new == 1
 
 
@@ -84,6 +92,9 @@ def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> Non
     assert report.documents_loaded == 1
     assert report.documents_filtered == 1
     assert report.filter_reasons == {FILTER_LOW_QUALITY_TEXT: 1}
+    assert [(item.source_path, item.reason) for item in report.filtered_documents] == [
+        (str(raw_dir / "tiny.md"), FILTER_LOW_QUALITY_TEXT)
+    ]
     assert store.load() == []
 
 
