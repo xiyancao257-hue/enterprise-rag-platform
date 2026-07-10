@@ -15,7 +15,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Res
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from enterprise_rag.cache.in_memory import InMemoryCache
+from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
 from enterprise_rag.ingestion.pipeline import IngestReport
@@ -271,8 +271,8 @@ def create_app(
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
-    app.state.embedding_cache = InMemoryCache()
-    app.state.query_cache = InMemoryCache()
+    app.state.embedding_cache = create_cache(config.cache)
+    app.state.query_cache = create_cache(config.cache)
     app.state.audit_logger = audit_logger or (
         JsonAuditLogger(Path(config.audit.path)) if config.audit.enabled else NullAuditLogger()
     )
@@ -287,6 +287,7 @@ def create_app(
         record_retry_exhausted=app.state.metrics.record_ingest_job_retry_exhausted,
         log_event=_log_event,
         embedding_cache=app.state.embedding_cache,
+        embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
     )
     app.state.ingest_job_queue_factory = ingest_job_queue_factory or FastApiBackgroundTaskQueue
 
@@ -405,6 +406,7 @@ def create_app(
             graph_max_hops=config.retrieval.graph_max_hops,
             vector_index=create_vector_index(config.vector_index),
             embedding_cache=app.state.embedding_cache,
+            embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
         )
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,
@@ -461,7 +463,9 @@ def create_app(
             trace if payload.include_trace else None,
         )
         cache_response = _query_response(request.state.request_id, tenant_id, answer, trace)
-        app.state.query_cache.set(query_cache_key, cache_response.model_dump(), ttl_seconds=300)
+        app.state.query_cache.set(
+            query_cache_key, cache_response.model_dump(), ttl_seconds=config.cache.query_ttl_seconds
+        )
         return response
 
     @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)

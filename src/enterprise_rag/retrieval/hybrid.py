@@ -23,10 +23,16 @@ class HybridRetriever:
         extra_retrievers: list[SingleQueryRetriever] | None = None,
         vector_index: VectorIndex | None = None,
         embedding_cache: CacheStore | None = None,
+        embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
         self.chunks = chunks
         self.bm25 = BM25Retriever(chunks)
-        self.vector = HashingVectorRetriever(chunks, vector_index=vector_index, embedding_cache=embedding_cache)
+        self.vector = HashingVectorRetriever(
+            chunks,
+            vector_index=vector_index,
+            embedding_cache=embedding_cache,
+            embedding_ttl_seconds=embedding_ttl_seconds,
+        )
         self.extra_retrievers = extra_retrievers or []
 
     def search(

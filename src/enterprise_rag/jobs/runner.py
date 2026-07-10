@@ -32,6 +32,7 @@ class IngestJobRunner:
         now: Callable[[], float] | None = None,
         worker_id: str | None = None,
         embedding_cache: CacheStore | None = None,
+        embedding_ttl_seconds: int | None = None,
     ) -> None:
         self.job_store = job_store
         self.index_path = index_path
@@ -44,6 +45,9 @@ class IngestJobRunner:
         self.now = now or time.time
         self.worker_id = worker_id or f"worker_{uuid4().hex}"
         self.embedding_cache = embedding_cache or InMemoryCache()
+        self.embedding_ttl_seconds = (
+            embedding_ttl_seconds if embedding_ttl_seconds is not None else config.cache.embedding_ttl_seconds
+        )
 
     def run(self, job_id: str) -> None:
         job = self.job_store.get(job_id)
@@ -92,7 +96,10 @@ class IngestJobRunner:
             if job.sync_vectors and not job.dry_run:
                 chunks_by_id = {chunk.id: chunk for chunk in store.load()}
                 chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
-                sync_report = VectorIndexSync(embedding_cache=self.embedding_cache).sync(
+                sync_report = VectorIndexSync(
+                    embedding_cache=self.embedding_cache,
+                    embedding_ttl_seconds=self.embedding_ttl_seconds,
+                ).sync(
                     create_vector_index(self.config.vector_index),
                     chunks_to_upsert=chunks_to_upsert,
                     chunk_ids_to_delete=list(report.chunks_deleted),

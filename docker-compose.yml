@@ -32,6 +32,13 @@ services:
         "config/default.json",
       ]
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -41,3 +48,4 @@ services:
 
 volumes:
   qdrant_data:
+  redis_data:

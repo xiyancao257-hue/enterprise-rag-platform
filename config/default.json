@@ -39,5 +39,12 @@
   "audit": {
     "enabled": false,
     "path": "data/audit/audit.jsonl"
+  },
+  "cache": {
+    "provider": "memory",
+    "url": "redis://redis:6379/0",
+    "prefix": "enterprise-rag",
+    "query_ttl_seconds": 300,
+    "embedding_ttl_seconds": 86400
   }
 }

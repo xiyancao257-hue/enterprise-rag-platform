@@ -61,6 +61,13 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "enabled": True,
                 "path": "data/audit/test.jsonl",
             },
+            "cache": {
+                "provider": "redis",
+                "url": "redis://redis:6379/1",
+                "prefix": "test-rag",
+                "query_ttl_seconds": 120,
+                "embedding_ttl_seconds": 3600,
+            },
         }
     )
 
@@ -90,6 +97,11 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.llm.output_cost_per_1k_tokens == 0.2
     assert config.audit.enabled is True
     assert config.audit.path == "data/audit/test.jsonl"
+    assert config.cache.provider == "redis"
+    assert config.cache.url == "redis://redis:6379/1"
+    assert config.cache.prefix == "test-rag"
+    assert config.cache.query_ttl_seconds == 120
+    assert config.cache.embedding_ttl_seconds == 3600
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

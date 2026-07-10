@@ -21,11 +21,13 @@ class VectorIndexSync:
         self,
         embedding_model: EmbeddingModel | None = None,
         embedding_cache: CacheStore | None = None,
+        embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
         self.embedding_model = embedding_model or CachedEmbeddingModel(
             HashingEmbeddingModel(),
             cache=embedding_cache,
             model_id="hashing-embedding-v1",
+            ttl_seconds=embedding_ttl_seconds,
         )
 
     def sync(

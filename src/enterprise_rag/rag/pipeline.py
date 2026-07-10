@@ -27,6 +27,7 @@ class RagPipeline:
         graph_max_hops: int = 2,
         vector_index: VectorIndex | None = None,
         embedding_cache: CacheStore | None = None,
+        embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
         vocabulary = {token for chunk in chunks for token in tokenize(chunk.text)}
         extra_retrievers = []
@@ -39,6 +40,7 @@ class RagPipeline:
             extra_retrievers=extra_retrievers,
             vector_index=vector_index,
             embedding_cache=embedding_cache,
+            embedding_ttl_seconds=embedding_ttl_seconds,
         )
         self.reranker = reranker or LightweightReranker()
         self.prompt_injection_detector = prompt_injection_detector or PromptInjectionDetector()

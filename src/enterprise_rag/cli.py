@@ -4,7 +4,8 @@ import argparse
 import time
 from pathlib import Path
 
-from enterprise_rag.cache.in_memory import InMemoryCache
+from enterprise_rag.cache.base import CacheStore
+from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.config import load_config
 from enterprise_rag.evaluation.eval_generation import (
     generate_eval_cases_from_logs,
@@ -192,6 +193,8 @@ def main() -> None:
             args.trace,
             args.log_query,
             create_vector_index(config.vector_index),
+            create_cache(config.cache),
+            config.cache.embedding_ttl_seconds,
         )
     elif args.command == "eval":
         config = load_config(args.config)
@@ -232,7 +235,7 @@ def ingest(
     dry_run: bool = False,
 ) -> None:
     config = load_config(config_path)
-    embedding_cache = InMemoryCache()
+    embedding_cache = create_cache(config.cache)
     store = JsonChunkStore(index_path)
     metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
     report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(config.ingestion)).run(
@@ -252,7 +255,10 @@ def ingest(
     if sync_vectors and not dry_run:
         chunks_by_id = {chunk.id: chunk for chunk in store.load()}
         chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
-        sync_report = VectorIndexSync(embedding_cache=embedding_cache).sync(
+        sync_report = VectorIndexSync(
+            embedding_cache=embedding_cache,
+            embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+        ).sync(
             create_vector_index(config.vector_index),
             chunks_to_upsert=chunks_to_upsert,
             chunk_ids_to_delete=list(report.chunks_deleted),
@@ -261,6 +267,7 @@ def ingest(
 
 
 def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | None = None) -> None:
+    config = load_config(config_path)
     job_store = JsonIngestJobStore(jobs_path)
     if job_store.get(job_id) is None:
         raise SystemExit(f"No ingest job found for {job_id} in {jobs_path}")
@@ -268,8 +275,9 @@ def run_job(job_id: str, jobs_path: Path, index_path: Path, config_path: Path | 
     runner = IngestJobRunner(
         job_store=job_store,
         index_path=index_path,
-        config=load_config(config_path),
-        embedding_cache=InMemoryCache(),
+        config=config,
+        embedding_cache=create_cache(config.cache),
+        embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
     )
     runner.run(job_id)
     job = job_store.get(job_id)
@@ -306,7 +314,13 @@ def worker(
     config = load_config(config_path)
     interval = poll_seconds if poll_seconds is not None else config.jobs.worker_poll_seconds
     job_store = JsonIngestJobStore(jobs_path)
-    runner = IngestJobRunner(job_store=job_store, index_path=index_path, config=config, embedding_cache=InMemoryCache())
+    runner = IngestJobRunner(
+        job_store=job_store,
+        index_path=index_path,
+        config=config,
+        embedding_cache=create_cache(config.cache),
+        embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+    )
 
     while True:
         jobs = job_store.list()
@@ -328,12 +342,21 @@ def query(
     show_trace: bool = False,
     log_query_path: Path | None = None,
     vector_index: VectorIndex | None = None,
+    embedding_cache: CacheStore | None = None,
+    embedding_ttl_seconds: int | None = 86_400,
 ) -> None:
     chunks = JsonChunkStore(index_path).load()
     if not chunks:
         raise SystemExit(f"No chunks found at {index_path}. Run `enterprise-rag ingest data/raw` first.")
 
-    pipeline = RagPipeline(chunks, enable_graph=enable_graph, graph_max_hops=graph_max_hops, vector_index=vector_index)
+    pipeline = RagPipeline(
+        chunks,
+        enable_graph=enable_graph,
+        graph_max_hops=graph_max_hops,
+        vector_index=vector_index,
+        embedding_cache=embedding_cache,
+        embedding_ttl_seconds=embedding_ttl_seconds,
+    )
     answer, trace = pipeline.answer_for_user_with_trace(
         query_text,
         top_k=top_k,

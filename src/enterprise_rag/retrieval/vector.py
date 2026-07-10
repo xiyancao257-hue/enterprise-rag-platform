@@ -16,6 +16,7 @@ class HashingVectorRetriever:
         embedding_model: EmbeddingModel | None = None,
         vector_index: VectorIndex | None = None,
         embedding_cache: CacheStore | None = None,
+        embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
         self.chunks = chunks
         self.chunks_by_id = {chunk.id: chunk for chunk in chunks}
@@ -23,6 +24,7 @@ class HashingVectorRetriever:
             HashingEmbeddingModel(),
             cache=embedding_cache,
             model_id="hashing-embedding-v1",
+            ttl_seconds=embedding_ttl_seconds,
         )
         self.vector_index = vector_index or InMemoryVectorIndex()
         for chunk in chunks:
