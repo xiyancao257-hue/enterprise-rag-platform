@@ -20,7 +20,8 @@ Fourth is evaluation and self-healing. The system logs query outcomes, analyzes 
 
 The ingestion design treats data quality as part of retrieval quality. Instead of splitting raw text immediately, the system:
 
-- loads documents with source metadata
+- loads source documents through a connector abstraction
+- preserves source metadata such as source system, URI, version, and update time
 - filters dirty or low-information text
 - parses headings, paragraphs, and tables
 - creates chunks that preserve document structure

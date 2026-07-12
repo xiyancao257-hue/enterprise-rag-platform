@@ -208,6 +208,26 @@ def test_incremental_ingest_counts_file_policy_filtered_documents(tmp_path: Path
     assert report.documents_new == 1
 
 
+def test_incremental_ingest_preserves_connector_source_metadata(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline().run(raw_dir, store)
+
+    chunks = store.load()
+    assert report.documents_new == 1
+    assert chunks[0].metadata["source_system"] == "local_file"
+    assert chunks[0].metadata["source_uri"] == source.resolve().as_uri()
+    assert chunks[0].metadata["source_version"] == chunks[0].metadata["content_hash"]
+    assert chunks[0].metadata["source_updated_at"]
+
+
 def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

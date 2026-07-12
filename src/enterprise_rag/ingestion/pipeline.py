@@ -4,7 +4,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from enterprise_rag.config import ChunkingConfig
-from enterprise_rag.ingestion.loaders import FilteredDocument, load_documents_with_report
+from enterprise_rag.ingestion.connectors import LocalFileConnector, SourceConnector
+from enterprise_rag.ingestion.loaders import FilteredDocument
 from enterprise_rag.ingestion.ocr import OcrAdapter, PdfPageRenderer
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Chunk, Document
@@ -44,6 +45,7 @@ class IncrementalIngestPipeline:
         file_policy: IngestionFilePolicy | None = None,
         ocr_adapter: OcrAdapter | None = None,
         pdf_page_renderer: PdfPageRenderer | None = None,
+        source_connector: SourceConnector | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
@@ -53,6 +55,11 @@ class IncrementalIngestPipeline:
         self.file_policy = file_policy or IngestionFilePolicy()
         self.ocr_adapter = ocr_adapter
         self.pdf_page_renderer = pdf_page_renderer
+        self.source_connector = source_connector or LocalFileConnector(
+            policy=self.file_policy,
+            ocr_adapter=self.ocr_adapter,
+            pdf_page_renderer=self.pdf_page_renderer,
+        )
 
     def run(
         self,
@@ -65,12 +72,7 @@ class IncrementalIngestPipeline:
         ingest_scope = metadata_overrides.get("tenant_id", "")
         existing_chunks = store.load()
         existing_by_source = self._group_by_source(existing_chunks)
-        load_result = load_documents_with_report(
-            source_path,
-            policy=self.file_policy,
-            ocr_adapter=self.ocr_adapter,
-            pdf_page_renderer=self.pdf_page_renderer,
-        )
+        load_result = self.source_connector.load(source_path)
         documents = [self._with_metadata_overrides(document, metadata_overrides) for document in load_result.documents]
         current_sources = {self._source_key(document.metadata, document.source_path) for document in documents}
 
@@ -194,7 +196,7 @@ class IncrementalIngestPipeline:
         return replace(document, metadata={**document.metadata, **metadata_overrides})
 
     def _source_key(self, metadata: dict[str, str], source_path: str) -> tuple[str, str]:
-        return (metadata.get("tenant_id", ""), source_path)
+        return (metadata.get("tenant_id", ""), metadata.get("source_uri", source_path))
 
     def _count_filter_reason(self, filter_reasons: dict[str, int], reason: str) -> None:
         filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
