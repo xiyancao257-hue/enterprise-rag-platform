@@ -7,10 +7,11 @@ from enterprise_rag.config import OcrConfig
 from enterprise_rag.ingestion.ocr import (
     DisabledOcrAdapter,
     OcrUnavailableError,
+    PopplerPdfPageRenderer,
     TesseractOcrAdapter,
     UnconfiguredOcrAdapter,
 )
-from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter
+from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter, create_pdf_page_renderer
 
 
 def test_disabled_ocr_adapter_raises_clear_error(tmp_path: Path) -> None:
@@ -38,6 +39,21 @@ def test_ocr_factory_returns_tesseract_adapter() -> None:
     assert isinstance(adapter, TesseractOcrAdapter)
     assert adapter.command == "/opt/bin/tesseract"
     assert adapter.timeout_seconds == 12.5
+
+
+def test_pdf_renderer_factory_returns_poppler_renderer() -> None:
+    renderer = create_pdf_page_renderer(
+        OcrConfig(
+            pdf_renderer_cmd="/opt/bin/pdftoppm",
+            pdf_render_dpi=300,
+            pdf_render_timeout_seconds=45.0,
+        )
+    )
+
+    assert isinstance(renderer, PopplerPdfPageRenderer)
+    assert renderer.command == "/opt/bin/pdftoppm"
+    assert renderer.dpi == 300
+    assert renderer.timeout_seconds == 45.0
 
 
 @pytest.mark.parametrize(
@@ -114,3 +130,48 @@ def test_tesseract_adapter_rejects_pdf_without_page_rendering(tmp_path: Path) ->
 
     with pytest.raises(OcrUnavailableError, match="does not read PDFs directly"):
         TesseractOcrAdapter().extract_text(pdf)
+
+
+def test_poppler_pdf_renderer_runs_cli_and_returns_pages_in_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf = tmp_path / "scan.pdf"
+    output_dir = tmp_path / "pages"
+    pdf.write_bytes(b"fake pdf")
+
+    def fake_run(*args, **kwargs):
+        output_dir.joinpath("page-10.png").write_bytes(b"10")
+        output_dir.joinpath("page-2.png").write_bytes(b"2")
+        output_dir.joinpath("page-1.png").write_bytes(b"1")
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    pages = PopplerPdfPageRenderer(command="pdftoppm-test", dpi=250, timeout_seconds=9).render_pages(pdf, output_dir)
+
+    assert [page.name for page in pages] == ["page-1.png", "page-2.png", "page-10.png"]
+
+
+def test_poppler_pdf_renderer_reports_missing_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = tmp_path / "scan.pdf"
+
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(OcrUnavailableError, match="was not found"):
+        PopplerPdfPageRenderer(command="missing-pdftoppm").render_pages(pdf, tmp_path / "pages")
+
+
+def test_poppler_pdf_renderer_reports_failed_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = tmp_path / "scan.pdf"
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=1, stdout="", stderr="bad pdf")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(OcrUnavailableError, match="bad pdf"):
+        PopplerPdfPageRenderer().render_pages(pdf, tmp_path / "pages")

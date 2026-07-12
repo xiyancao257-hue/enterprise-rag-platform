@@ -61,6 +61,9 @@ class OcrConfig:
     provider: str = "disabled"
     tesseract_cmd: str = "tesseract"
     tesseract_timeout_seconds: float = 30.0
+    pdf_renderer_cmd: str = "pdftoppm"
+    pdf_render_dpi: int = 200
+    pdf_render_timeout_seconds: float = 60.0
     aws_region: str = ""
     azure_endpoint_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
     azure_key_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_KEY"
@@ -228,6 +231,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             tesseract_cmd=str(ocr_data.get("tesseract_cmd", OcrConfig.tesseract_cmd)),
             tesseract_timeout_seconds=float(
                 ocr_data.get("tesseract_timeout_seconds", OcrConfig.tesseract_timeout_seconds)
+            ),
+            pdf_renderer_cmd=str(ocr_data.get("pdf_renderer_cmd", OcrConfig.pdf_renderer_cmd)),
+            pdf_render_dpi=int(ocr_data.get("pdf_render_dpi", OcrConfig.pdf_render_dpi)),
+            pdf_render_timeout_seconds=float(
+                ocr_data.get("pdf_render_timeout_seconds", OcrConfig.pdf_render_timeout_seconds)
             ),
             aws_region=str(ocr_data.get("aws_region", OcrConfig.aws_region)),
             azure_endpoint_env_var=str(ocr_data.get("azure_endpoint_env_var", OcrConfig.azure_endpoint_env_var)),

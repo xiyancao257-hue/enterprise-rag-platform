@@ -26,7 +26,7 @@ The ingestion design treats data quality as part of retrieval quality. Instead o
 - creates chunks that preserve document structure
 - stores chunks as JSON for repeatable local demos
 
-The main tradeoff is simplicity versus document coverage. The current implementation supports Markdown, text, CSV tables, and text-based PDFs. It also has an OCR adapter interface for scanned PDFs and images, with OCR disabled by default until a production provider is configured. DOCX and multimodal extraction are clear adapter extensions.
+The main tradeoff is simplicity versus document coverage. The current implementation supports Markdown, text, CSV tables, text-based PDFs, image OCR through Tesseract, and scanned PDF OCR by rendering PDF pages with Poppler before OCR. OCR is still disabled by default so local demos stay deterministic until a provider is explicitly configured. DOCX and richer multimodal extraction are clear adapter extensions.
 
 ## Query Planning Deep Dive
 

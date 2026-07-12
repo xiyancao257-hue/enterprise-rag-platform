@@ -57,6 +57,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "provider": "tesseract",
                 "tesseract_cmd": "/opt/bin/tesseract",
                 "tesseract_timeout_seconds": 12.5,
+                "pdf_renderer_cmd": "/opt/bin/pdftoppm",
+                "pdf_render_dpi": 300,
+                "pdf_render_timeout_seconds": 45.0,
                 "aws_region": "us-west-2",
                 "azure_endpoint_env_var": "AZURE_DI_ENDPOINT",
                 "azure_key_env_var": "AZURE_DI_KEY",
@@ -129,6 +132,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.ocr.provider == "tesseract"
     assert config.ocr.tesseract_cmd == "/opt/bin/tesseract"
     assert config.ocr.tesseract_timeout_seconds == 12.5
+    assert config.ocr.pdf_renderer_cmd == "/opt/bin/pdftoppm"
+    assert config.ocr.pdf_render_dpi == 300
+    assert config.ocr.pdf_render_timeout_seconds == 45.0
     assert config.ocr.aws_region == "us-west-2"
     assert config.ocr.azure_endpoint_env_var == "AZURE_DI_ENDPOINT"
     assert config.ocr.azure_key_env_var == "AZURE_DI_KEY"

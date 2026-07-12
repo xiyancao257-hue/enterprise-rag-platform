@@ -21,6 +21,15 @@ class FakeOcrAdapter:
         )
 
 
+class FakePdfPageRenderer:
+    def render_pages(self, path: Path, output_dir: Path) -> tuple[Path, ...]:
+        first_page = output_dir / "page-1.png"
+        second_page = output_dir / "page-2.png"
+        first_page.write_bytes(b"fake page 1")
+        second_page.write_bytes(b"fake page 2")
+        return (first_page, second_page)
+
+
 def test_load_documents_reads_supported_files(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -123,6 +132,27 @@ def test_load_documents_routes_textless_pdf_to_ocr(tmp_path: Path) -> None:
     assert result.documents[0].metadata["source_format"] == "pdf_ocr"
     assert result.documents[0].metadata["pdf_pages_with_text"] == "0"
     assert result.documents[0].metadata["ocr_provider"] == "fake"
+
+
+def test_load_documents_renders_textless_pdf_pages_before_ocr(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    pdf_file = raw_dir / "scan.pdf"
+    _write_minimal_pdf(pdf_file, "")
+
+    result = load_documents_with_report(
+        raw_dir,
+        ocr_adapter=FakeOcrAdapter(),
+        pdf_page_renderer=FakePdfPageRenderer(),
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].metadata["source_format"] == "pdf_ocr"
+    assert result.documents[0].metadata["pdf_pages_with_text"] == "0"
+    assert result.documents[0].metadata["pdf_ocr_pages_rendered"] == "2"
+    assert result.documents[0].metadata["pdf_ocr_pages_with_text"] == "2"
+    assert "## Page 1" in result.documents[0].text
+    assert "## Page 2" in result.documents[0].text
 
 
 def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> None:

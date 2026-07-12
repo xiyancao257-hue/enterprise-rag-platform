@@ -39,6 +39,9 @@
     "provider": "disabled",
     "tesseract_cmd": "tesseract",
     "tesseract_timeout_seconds": 30.0,
+    "pdf_renderer_cmd": "pdftoppm",
+    "pdf_render_dpi": 200,
+    "pdf_render_timeout_seconds": 60.0,
     "aws_region": "",
     "azure_endpoint_env_var": "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
     "azure_key_env_var": "AZURE_DOCUMENT_INTELLIGENCE_KEY"

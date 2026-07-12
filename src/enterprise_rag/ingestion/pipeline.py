@@ -5,7 +5,7 @@ from pathlib import Path
 
 from enterprise_rag.config import ChunkingConfig
 from enterprise_rag.ingestion.loaders import FilteredDocument, load_documents_with_report
-from enterprise_rag.ingestion.ocr import OcrAdapter
+from enterprise_rag.ingestion.ocr import OcrAdapter, PdfPageRenderer
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
@@ -43,6 +43,7 @@ class IncrementalIngestPipeline:
         chunking_config: ChunkingConfig | None = None,
         file_policy: IngestionFilePolicy | None = None,
         ocr_adapter: OcrAdapter | None = None,
+        pdf_page_renderer: PdfPageRenderer | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
@@ -51,6 +52,7 @@ class IncrementalIngestPipeline:
         self.chunking_config = chunking_config or ChunkingConfig()
         self.file_policy = file_policy or IngestionFilePolicy()
         self.ocr_adapter = ocr_adapter
+        self.pdf_page_renderer = pdf_page_renderer
 
     def run(
         self,
@@ -63,7 +65,12 @@ class IncrementalIngestPipeline:
         ingest_scope = metadata_overrides.get("tenant_id", "")
         existing_chunks = store.load()
         existing_by_source = self._group_by_source(existing_chunks)
-        load_result = load_documents_with_report(source_path, policy=self.file_policy, ocr_adapter=self.ocr_adapter)
+        load_result = load_documents_with_report(
+            source_path,
+            policy=self.file_policy,
+            ocr_adapter=self.ocr_adapter,
+            pdf_page_renderer=self.pdf_page_renderer,
+        )
         documents = [self._with_metadata_overrides(document, metadata_overrides) for document in load_result.documents]
         current_sources = {self._source_key(document.metadata, document.source_path) for document in documents}
 

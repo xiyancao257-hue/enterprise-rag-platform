@@ -20,10 +20,10 @@ enterprise-rag ingest data/raw
 enterprise-rag query "What does AUTH-429 affect?" --enable-graph --trace
 ```
 
-Add `.txt`, `.md`, `.csv`, or text-based `.pdf` files into `data/raw` before running ingestion.
-CSV files are converted into table-aware chunks. PDFs are supported when they contain selectable text.
-Scanned PDFs and images route through an OCR adapter interface; the default adapter is disabled and
-reports `ocr_unavailable` until a production OCR provider is plugged in.
+Add `.txt`, `.md`, `.csv`, or `.pdf` files into `data/raw` before running ingestion.
+CSV files are converted into table-aware chunks. PDFs with selectable text preserve page markers.
+Scanned PDFs and images route through the OCR adapter interface; OCR is disabled by default, but
+`ocr.provider: "tesseract"` enables local image OCR and Poppler-based scanned PDF page rendering.
 
 ## CLI Demo
 
@@ -208,7 +208,8 @@ Ingestion:
 - `ingestion/loaders.py` loads local `.txt`, `.md`, `.csv`, and text-based `.pdf` documents.
 - `.csv` files are converted into Markdown-style tables before parsing.
 - `.pdf` files use text extraction and preserve page markers before parsing.
-- Scanned PDFs and images can be routed through `ingestion/ocr.py`; by default OCR is disabled rather than silently guessing.
+- Scanned PDFs can be rendered to page images with Poppler and routed through the configured OCR adapter.
+- Images can be routed through `ingestion/ocr.py`; by default OCR is disabled rather than silently guessing.
 - `processing/cleaning.py` filters low-quality or duplicated text.
 - `processing/parser.py` preserves headings, paragraphs, and tables as document blocks.
 - `processing/chunking.py` creates structure-aware chunks with source metadata.

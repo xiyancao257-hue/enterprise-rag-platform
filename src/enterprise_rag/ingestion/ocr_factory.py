@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from enterprise_rag.config import OcrConfig
-from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, TesseractOcrAdapter, UnconfiguredOcrAdapter
+from enterprise_rag.ingestion.ocr import (
+    DisabledOcrAdapter,
+    OcrAdapter,
+    PdfPageRenderer,
+    PopplerPdfPageRenderer,
+    TesseractOcrAdapter,
+    UnconfiguredOcrAdapter,
+)
 
 
 def create_ocr_adapter(config: OcrConfig) -> OcrAdapter:
@@ -28,3 +35,11 @@ def create_ocr_adapter(config: OcrConfig) -> OcrAdapter:
             ),
         )
     raise ValueError(f"Unsupported OCR provider `{config.provider}`.")
+
+
+def create_pdf_page_renderer(config: OcrConfig) -> PdfPageRenderer:
+    return PopplerPdfPageRenderer(
+        command=config.pdf_renderer_cmd,
+        dpi=config.pdf_render_dpi,
+        timeout_seconds=config.pdf_render_timeout_seconds,
+    )

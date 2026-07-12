@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, OcrUnavailableError
+from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, OcrUnavailableError, PdfPageRenderer
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Document
 from enterprise_rag.text import normalize_text
@@ -38,6 +39,7 @@ def load_documents_with_report(
     path: Path,
     policy: IngestionFilePolicy | None = None,
     ocr_adapter: OcrAdapter | None = None,
+    pdf_page_renderer: PdfPageRenderer | None = None,
 ) -> LoadDocumentsResult:
     policy = policy or IngestionFilePolicy()
     ocr_adapter = ocr_adapter or DisabledOcrAdapter()
@@ -56,7 +58,7 @@ def load_documents_with_report(
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=rejection_reason))
             continue
         try:
-            raw_text, loader_metadata = _read_file(file, ocr_adapter)
+            raw_text, loader_metadata = _read_file(file, ocr_adapter, pdf_page_renderer)
         except OcrUnavailableError:
             _count_filter_reason(filter_reasons, FILTER_OCR_UNAVAILABLE)
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=FILTER_OCR_UNAVAILABLE))
@@ -97,19 +99,56 @@ def _count_filter_reason(filter_reasons: dict[str, int], reason: str) -> None:
     filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
 
 
-def _read_file(file: Path, ocr_adapter: OcrAdapter) -> tuple[str, dict[str, str]]:
+def _read_file(
+    file: Path,
+    ocr_adapter: OcrAdapter,
+    pdf_page_renderer: PdfPageRenderer | None,
+) -> tuple[str, dict[str, str]]:
     if file.suffix.lower() == ".csv":
         return _csv_to_markdown_table(file), {"source_format": "csv", "table_format": "markdown"}
     if file.suffix.lower() == ".pdf":
         text, metadata = _pdf_to_text(file)
         if metadata["pdf_pages_with_text"] != "0":
             return text, metadata
-        result = ocr_adapter.extract_text(file)
-        return result.text, {**metadata, **result.metadata, "source_format": "pdf_ocr"}
+        return _ocr_textless_pdf(file, metadata, ocr_adapter, pdf_page_renderer)
     if file.suffix.lower() in IMAGE_EXTENSIONS:
         result = ocr_adapter.extract_text(file)
         return result.text, {**result.metadata, "source_format": "image_ocr"}
     return file.read_text(encoding="utf-8", errors="ignore"), {}
+
+
+def _ocr_textless_pdf(
+    file: Path,
+    pdf_metadata: dict[str, str],
+    ocr_adapter: OcrAdapter,
+    pdf_page_renderer: PdfPageRenderer | None,
+) -> tuple[str, dict[str, str]]:
+    if pdf_page_renderer is None:
+        result = ocr_adapter.extract_text(file)
+        return result.text, {**pdf_metadata, **result.metadata, "source_format": "pdf_ocr"}
+
+    title = file.stem.replace("_", " ").replace("-", " ").title()
+    parts = [f"# {title}"]
+    ocr_metadata: dict[str, str] = {}
+    pages_with_ocr_text = 0
+    with tempfile.TemporaryDirectory(prefix="enterprise-rag-pdf-ocr-") as temp_dir:
+        page_images = pdf_page_renderer.render_pages(file, Path(temp_dir))
+        for page_number, page_image in enumerate(page_images, start=1):
+            result = ocr_adapter.extract_text(page_image)
+            page_text = normalize_text(result.text)
+            ocr_metadata.update(result.metadata)
+            if not page_text:
+                continue
+            pages_with_ocr_text += 1
+            parts.extend(["", f"## Page {page_number}", "", page_text])
+
+    return "\n".join(parts), {
+        **pdf_metadata,
+        **ocr_metadata,
+        "source_format": "pdf_ocr",
+        "pdf_ocr_pages_rendered": str(len(page_images)),
+        "pdf_ocr_pages_with_text": str(pages_with_ocr_text),
+    }
 
 
 def _csv_to_markdown_table(file: Path) -> str:
