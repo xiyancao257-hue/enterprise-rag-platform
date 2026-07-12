@@ -191,6 +191,21 @@ curl -X POST http://localhost:8000/query \
   -d '{"query":"What does AUTH-429 affect?","top_k":3}'
 ```
 
+For A/B tests or rollout experiments, pass experiment metadata through trusted headers. The API includes
+the experiment in the response, query cache profile, logs, and audit event so variants can be compared
+without parsing natural-language queries.
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
+  -H "X-Tenant-ID: acme" \
+  -H "X-Experiment-Name: retrieval_profile" \
+  -H "X-Experiment-Variant: graph_candidate" \
+  -H "X-Experiment-Key: acme:user-123:auth-429" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What does AUTH-429 affect?","top_k":3}'
+```
+
 ## Current Architecture
 
 For the full system diagram and interview walkthrough, see [`docs/architecture.md`](docs/architecture.md).

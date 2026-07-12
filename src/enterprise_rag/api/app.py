@@ -44,6 +44,9 @@ DEFAULT_FEEDBACK = Path("data/feedback/feedback.jsonl")
 REQUEST_ID_HEADER = "X-Request-ID"
 API_KEY_HEADER = "X-API-Key"
 TENANT_ID_HEADER = "X-Tenant-ID"
+EXPERIMENT_NAME_HEADER = "X-Experiment-Name"
+EXPERIMENT_VARIANT_HEADER = "X-Experiment-Variant"
+EXPERIMENT_KEY_HEADER = "X-Experiment-Key"
 logger = logging.getLogger("enterprise_rag.api")
 
 
@@ -264,10 +267,17 @@ class QueryGuardrailResponse(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class ExperimentResponse(BaseModel):
+    name: str
+    variant: str
+    assignment_key: str | None = None
+
+
 class QueryResponse(BaseModel):
     request_id: str
     tenant_id: str | None = None
     index_version: str
+    experiment: ExperimentResponse | None = None
     answer: str
     query_plan: QueryPlanResponse
     citations: list[CitationResponse]
@@ -646,6 +656,7 @@ def create_app(
         user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
         mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
         index_version = app.state.index_version_store.current_id(app.state.index_path)
+        experiment = _experiment_response(request)
         query_cache_key = build_query_cache_key(
             query=payload.query,
             tenant_id=tenant_id,
@@ -654,7 +665,7 @@ def create_app(
             top_k=top_k,
             index_path=app.state.index_path,
             index_version_id=index_version,
-            retrieval_profile=_query_cache_retrieval_profile(config),
+            retrieval_profile=_query_cache_retrieval_profile(config, experiment),
         )
         cached_response = app.state.query_cache.get(query_cache_key)
         if isinstance(cached_response, dict):
@@ -671,6 +682,7 @@ def create_app(
                     **cached_response,
                     "request_id": request.state.request_id,
                     "tenant_id": tenant_id,
+                    "experiment": experiment.model_dump() if experiment is not None else None,
                     "trace": cached_response.get("trace") if payload.include_trace else None,
                 }
             )
@@ -720,6 +732,7 @@ def create_app(
             vector_index_provider=config.vector_index.provider,
             index_version=index_version,
             tenant_id=tenant_id,
+            experiment=experiment.model_dump() if experiment is not None else None,
             estimated_input_tokens=cost.input_tokens,
             estimated_output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
@@ -738,6 +751,7 @@ def create_app(
                     "query_length": len(payload.query),
                     "citation_chunk_ids": [hit.chunk.id for hit in answer.citations],
                     "index_version": index_version,
+                    "experiment": experiment.model_dump() if experiment is not None else None,
                     "user_groups": payload.user_groups,
                     "estimated_input_tokens": cost.input_tokens,
                     "estimated_output_tokens": cost.output_tokens,
@@ -753,6 +767,7 @@ def create_app(
             answer,
             trace if payload.include_trace else None,
             index_version=index_version,
+            experiment=experiment,
             latency_ms=latency_ms,
             cost=cost,
             guardrails=guardrails,
@@ -763,6 +778,7 @@ def create_app(
             answer,
             trace,
             index_version=index_version,
+            experiment=experiment,
             latency_ms=latency_ms,
             cost=cost,
             guardrails=guardrails,
@@ -949,6 +965,7 @@ def _query_response(
     answer: RagAnswer,
     trace: QueryTrace | None,
     index_version: str,
+    experiment: ExperimentResponse | None = None,
     latency_ms: float = 0.0,
     cost: object | None = None,
     guardrails: QueryGuardrailDecision | None = None,
@@ -957,6 +974,7 @@ def _query_response(
         request_id=request_id,
         tenant_id=tenant_id,
         index_version=index_version,
+        experiment=experiment,
         answer=answer.answer,
         query_plan=QueryPlanResponse(
             original_query=answer.query_plan.original_query,
@@ -981,6 +999,7 @@ def _stream_query_response(response: QueryResponse) -> Iterable[str]:
             "request_id": response.request_id,
             "tenant_id": response.tenant_id,
             "index_version": response.index_version,
+            "experiment": response.experiment.model_dump() if response.experiment is not None else None,
             "latency_ms": response.latency_ms,
             "cost": response.cost.model_dump(),
             "guardrails": response.guardrails.model_dump(),
@@ -1012,6 +1031,18 @@ def _cache_status(provider: str, cache: object) -> OpsCacheStatusResponse:
         hits=getattr(cache, "hits", None),
         misses=getattr(cache, "misses", None),
         entries=len(entries) if isinstance(entries, dict) else None,
+    )
+
+
+def _experiment_response(request: Request) -> ExperimentResponse | None:
+    name = request.headers.get(EXPERIMENT_NAME_HEADER, "").strip()
+    variant = request.headers.get(EXPERIMENT_VARIANT_HEADER, "").strip()
+    if not name and not variant:
+        return None
+    return ExperimentResponse(
+        name=name or "manual",
+        variant=variant or "unspecified",
+        assignment_key=request.headers.get(EXPERIMENT_KEY_HEADER),
     )
 
 
@@ -1065,8 +1096,11 @@ def _readiness_response(request_id: str, report: ReadinessReport) -> ReadinessRe
     )
 
 
-def _query_cache_retrieval_profile(config: AppConfig) -> dict[str, object]:
-    return {
+def _query_cache_retrieval_profile(
+    config: AppConfig,
+    experiment: ExperimentResponse | None = None,
+) -> dict[str, object]:
+    profile: dict[str, object] = {
         "retrieval": {
             "enable_graph": config.retrieval.enable_graph,
             "graph_max_hops": config.retrieval.graph_max_hops,
@@ -1087,6 +1121,9 @@ def _query_cache_retrieval_profile(config: AppConfig) -> dict[str, object]:
             "model": config.llm.model,
         },
     }
+    if experiment is not None:
+        profile["experiment"] = experiment.model_dump()
+    return profile
 
 
 def _citation_response(hit: SearchHit) -> CitationResponse:

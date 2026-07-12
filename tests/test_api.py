@@ -191,7 +191,11 @@ def test_query_stream_returns_ndjson_events(tmp_path) -> None:
 
     response = client.post(
         "/query/stream",
-        headers={REQUEST_ID_HEADER: "req_stream_123"},
+        headers={
+            REQUEST_ID_HEADER: "req_stream_123",
+            "X-Experiment-Name": "retrieval_profile",
+            "X-Experiment-Variant": "baseline",
+        },
         json={"query": "hybrid retrieval", "top_k": 1, "include_trace": True},
     )
     events = [json.loads(line) for line in response.text.splitlines()]
@@ -201,6 +205,7 @@ def test_query_stream_returns_ndjson_events(tmp_path) -> None:
     assert response.headers[REQUEST_ID_HEADER] == "req_stream_123"
     assert events[0]["event"] == "metadata"
     assert events[0]["request_id"] == "req_stream_123"
+    assert events[0]["experiment"]["variant"] == "baseline"
     assert any(event["event"] == "answer_delta" and "Grounded " in event["text"] for event in events)
     citation_event = next(event for event in events if event["event"] == "citations")
     trace_event = next(event for event in events if event["event"] == "trace")
@@ -362,6 +367,68 @@ def test_query_cache_reuses_response_for_same_security_context(tmp_path) -> None
     assert second_response.json()["answer"] == first_response.json()["answer"]
     assert app.state.query_cache.hits == 1
     assert app.state.query_cache.misses == 1
+
+
+def test_query_response_includes_experiment_headers(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.post(
+        "/query",
+        headers={
+            "X-Experiment-Name": "retrieval_profile",
+            "X-Experiment-Variant": "graph_candidate",
+            "X-Experiment-Key": "acme:user-1:hybrid retrieval",
+        },
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["experiment"] == {
+        "name": "retrieval_profile",
+        "variant": "graph_candidate",
+        "assignment_key": "acme:user-1:hybrid retrieval",
+    }
+
+
+def test_query_cache_is_experiment_variant_scoped(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    app = create_app(index_path=index_path)
+    client = TestClient(app)
+
+    baseline_response = client.post(
+        "/query",
+        headers={"X-Experiment-Name": "retrieval_profile", "X-Experiment-Variant": "baseline"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+    candidate_response = client.post(
+        "/query",
+        headers={"X-Experiment-Name": "retrieval_profile", "X-Experiment-Variant": "candidate"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert baseline_response.status_code == 200
+    assert candidate_response.status_code == 200
+    assert app.state.query_cache.hits == 0
+    assert app.state.query_cache.misses == 2
 
 
 def test_query_response_includes_index_version(tmp_path) -> None:
