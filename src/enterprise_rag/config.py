@@ -57,6 +57,23 @@ class IngestionConfig:
 
 
 @dataclass(frozen=True)
+class ChunkingProfileConfig:
+    target_tokens: int = 220
+    max_tokens: int = 360
+
+
+@dataclass(frozen=True)
+class ChunkingConfig:
+    default: ChunkingProfileConfig = field(default_factory=ChunkingProfileConfig)
+    by_extension: dict[str, ChunkingProfileConfig] = field(default_factory=dict)
+
+    def profile_for_extension(self, extension: str | None) -> ChunkingProfileConfig:
+        if extension is None:
+            return self.default
+        return self.by_extension.get(extension.lower(), self.default)
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     provider: str = "stub"
     model: str = "gpt-4.1-mini"
@@ -104,6 +121,7 @@ class AppConfig:
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
     jobs: JobsConfig = field(default_factory=JobsConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
+    chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
@@ -136,6 +154,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     vector_index_data = _section(data, "vector_index")
     jobs_data = _section(data, "jobs")
     ingestion_data = _section(data, "ingestion")
+    chunking_data = _section(data, "chunking")
     llm_data = _section(data, "llm")
     guardrails_data = _section(data, "guardrails")
     audit_data = _section(data, "audit")
@@ -192,6 +211,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             ),
             max_file_bytes=int(ingestion_data.get("max_file_bytes", IngestionConfig.max_file_bytes)),
         ),
+        chunking=_parse_chunking_config(chunking_data),
         llm=LLMConfig(
             provider=str(llm_data.get("provider", LLMConfig.provider)),
             model=str(llm_data.get("model", LLMConfig.model)),
@@ -238,6 +258,32 @@ def _section(data: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Config section `{key}` must be a JSON object.")
     return value
+
+
+def _parse_chunking_config(data: dict[str, Any]) -> ChunkingConfig:
+    default_data = data.get("default", {})
+    if not isinstance(default_data, dict):
+        raise ValueError("Config section `chunking.default` must be a JSON object.")
+
+    by_extension_data = data.get("by_extension", {})
+    if not isinstance(by_extension_data, dict):
+        raise ValueError("Config section `chunking.by_extension` must be a JSON object.")
+
+    return ChunkingConfig(
+        default=_parse_chunking_profile(default_data),
+        by_extension={
+            str(extension).lower(): _parse_chunking_profile(value) for extension, value in by_extension_data.items()
+        },
+    )
+
+
+def _parse_chunking_profile(value: Any) -> ChunkingProfileConfig:
+    if not isinstance(value, dict):
+        raise ValueError("Chunking profile values must be JSON objects.")
+    return ChunkingProfileConfig(
+        target_tokens=int(value.get("target_tokens", ChunkingProfileConfig.target_tokens)),
+        max_tokens=int(value.get("max_tokens", ChunkingProfileConfig.max_tokens)),
+    )
 
 
 def _parse_api_key_credentials(value: Any) -> tuple[ApiKeyCredential, ...]:

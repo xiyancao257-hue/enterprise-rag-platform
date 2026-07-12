@@ -240,9 +240,10 @@ def ingest(
     embedding_cache = create_cache(config.cache)
     store = JsonChunkStore(index_path)
     metadata_overrides = {"allowed_groups": ",".join(allowed_groups)} if allowed_groups else None
-    report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(config.ingestion)).run(
-        path, store, metadata_overrides=metadata_overrides, dry_run=dry_run
-    )
+    report = IncrementalIngestPipeline(
+        file_policy=IngestionFilePolicy.from_config(config.ingestion),
+        chunking_config=config.chunking,
+    ).run(path, store, metadata_overrides=metadata_overrides, dry_run=dry_run)
     if dry_run:
         print("Dry run: index was not written.")
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")

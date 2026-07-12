@@ -30,6 +30,22 @@
     "allowed_extensions": [".txt", ".md"],
     "max_file_bytes": 10000000
   },
+  "chunking": {
+    "default": {
+      "target_tokens": 220,
+      "max_tokens": 360
+    },
+    "by_extension": {
+      ".md": {
+        "target_tokens": 260,
+        "max_tokens": 420
+      },
+      ".txt": {
+        "target_tokens": 180,
+        "max_tokens": 300
+      }
+    }
+  },
   "llm": {
     "provider": "stub",
     "model": "gpt-4.1-mini",

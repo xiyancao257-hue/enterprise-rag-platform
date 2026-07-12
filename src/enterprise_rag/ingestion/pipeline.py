@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from enterprise_rag.config import ChunkingConfig
 from enterprise_rag.ingestion.loaders import FilteredDocument, load_documents_with_report
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Chunk, Document
@@ -38,12 +39,14 @@ class IncrementalIngestPipeline:
         redactor: SensitiveDataRedactor | None = None,
         parser: StructureParser | None = None,
         chunker: StructureAwareChunker | None = None,
+        chunking_config: ChunkingConfig | None = None,
         file_policy: IngestionFilePolicy | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
         self.parser = parser or StructureParser()
-        self.chunker = chunker or StructureAwareChunker()
+        self.chunker = chunker
+        self.chunking_config = chunking_config or ChunkingConfig()
         self.file_policy = file_policy or IngestionFilePolicy()
 
     def run(
@@ -78,7 +81,7 @@ class IncrementalIngestPipeline:
 
         for document in documents:
             previous_chunks = existing_by_source.get(self._source_key(document.metadata, document.source_path), [])
-            if previous_chunks and self._content_hash(previous_chunks) == document.metadata.get("content_hash"):
+            if previous_chunks and self._is_unchanged(previous_chunks, document):
                 next_chunks.extend(previous_chunks)
                 documents_unchanged += 1
                 continue
@@ -129,7 +132,7 @@ class IncrementalIngestPipeline:
             return []
         redacted = self.redactor.redact(cleaned)
         blocks = self.parser.parse(redacted)
-        return self.chunker.chunk(blocks)
+        return self._chunker_for(redacted).chunk(blocks)
 
     def _group_by_source(self, chunks: list[Chunk]) -> dict[str, list[Chunk]]:
         grouped: dict[tuple[str, str], list[Chunk]] = {}
@@ -146,6 +149,34 @@ class IncrementalIngestPipeline:
             if content_hash:
                 return content_hash
         return None
+
+    def _is_unchanged(self, previous_chunks: list[Chunk], document: Document) -> bool:
+        return self._content_hash(previous_chunks) == document.metadata.get("content_hash") and self._chunking_metadata(
+            previous_chunks
+        ) == self._expected_chunking_metadata(document)
+
+    def _chunker_for(self, document: Document) -> StructureAwareChunker:
+        if self.chunker is not None:
+            return self.chunker
+        profile = self.chunking_config.profile_for_extension(document.metadata.get("extension"))
+        return StructureAwareChunker(target_tokens=profile.target_tokens, max_tokens=profile.max_tokens)
+
+    def _expected_chunking_metadata(self, document: Document) -> dict[str, str]:
+        chunker = self._chunker_for(document)
+        return {
+            "chunking_strategy": "structure_aware",
+            "chunk_target_tokens": str(chunker.target_tokens),
+            "chunk_max_tokens": str(chunker.max_tokens),
+        }
+
+    def _chunking_metadata(self, chunks: list[Chunk]) -> dict[str, str]:
+        for chunk in chunks:
+            return {
+                "chunking_strategy": chunk.metadata.get("chunking_strategy", ""),
+                "chunk_target_tokens": chunk.metadata.get("chunk_target_tokens", ""),
+                "chunk_max_tokens": chunk.metadata.get("chunk_max_tokens", ""),
+            }
+        return {}
 
     def _with_metadata_overrides(self, document: Document, metadata_overrides: dict[str, str]) -> Document:
         if not metadata_overrides:

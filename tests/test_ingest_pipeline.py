@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from enterprise_rag.config import ChunkingConfig, ChunkingProfileConfig
 from enterprise_rag.ingestion.loaders import load_documents, load_documents_with_report
 from enterprise_rag.ingestion.pipeline import FILTER_LOW_QUALITY_TEXT, IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import FILTER_FILE_TOO_LARGE, FILTER_UNSUPPORTED_EXTENSION, IngestionFilePolicy
@@ -96,6 +97,67 @@ def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> Non
         (str(raw_dir / "tiny.md"), FILTER_LOW_QUALITY_TEXT)
     ]
     assert store.load() == []
+
+
+def test_incremental_ingest_uses_chunking_config_by_extension(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    raw_dir.joinpath("notes.txt").write_text(
+        "Plain text notes describe BM25 keyword recall and vector search for enterprise retrieval.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    pipeline = IncrementalIngestPipeline(
+        chunking_config=ChunkingConfig(
+            default=ChunkingProfileConfig(target_tokens=50, max_tokens=80),
+            by_extension={
+                ".md": ChunkingProfileConfig(target_tokens=25, max_tokens=40),
+                ".txt": ChunkingProfileConfig(target_tokens=10, max_tokens=20),
+            },
+        )
+    )
+
+    report = pipeline.run(raw_dir, store)
+
+    chunks = store.load()
+    chunks_by_extension = {chunk.metadata["extension"]: chunk for chunk in chunks}
+    assert report.documents_new == 2
+    assert chunks_by_extension[".md"].metadata["chunk_target_tokens"] == "25"
+    assert chunks_by_extension[".md"].metadata["chunk_max_tokens"] == "40"
+    assert chunks_by_extension[".txt"].metadata["chunk_target_tokens"] == "10"
+    assert chunks_by_extension[".txt"].metadata["chunk_max_tokens"] == "20"
+
+
+def test_incremental_ingest_reprocesses_when_chunking_config_changes(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    first = IncrementalIngestPipeline(
+        chunking_config=ChunkingConfig(
+            default=ChunkingProfileConfig(target_tokens=25, max_tokens=40),
+        )
+    ).run(raw_dir, store)
+    second = IncrementalIngestPipeline(
+        chunking_config=ChunkingConfig(
+            default=ChunkingProfileConfig(target_tokens=10, max_tokens=20),
+        )
+    ).run(raw_dir, store)
+
+    chunks = store.load()
+    assert first.documents_new == 1
+    assert second.documents_updated == 1
+    assert second.documents_unchanged == 0
+    assert chunks[0].metadata["chunk_target_tokens"] == "10"
+    assert chunks[0].metadata["chunk_max_tokens"] == "20"
 
 
 def test_cleaner_filters_low_quality_documents() -> None:

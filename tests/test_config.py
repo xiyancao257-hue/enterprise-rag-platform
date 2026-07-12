@@ -53,6 +53,18 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "allowed_extensions": [".md", ".txt", ".html"],
                 "max_file_bytes": 2048,
             },
+            "chunking": {
+                "default": {
+                    "target_tokens": 200,
+                    "max_tokens": 320,
+                },
+                "by_extension": {
+                    ".md": {
+                        "target_tokens": 260,
+                        "max_tokens": 420,
+                    }
+                },
+            },
             "llm": {
                 "provider": "openai",
                 "model": "gpt-test",
@@ -106,6 +118,12 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.ingestion.allowed_source_roots == ("data/raw", "/mnt/shared/rag")
     assert config.ingestion.allowed_extensions == (".md", ".txt", ".html")
     assert config.ingestion.max_file_bytes == 2048
+    assert config.chunking.default.target_tokens == 200
+    assert config.chunking.default.max_tokens == 320
+    assert config.chunking.by_extension[".md"].target_tokens == 260
+    assert config.chunking.by_extension[".md"].max_tokens == 420
+    assert config.chunking.profile_for_extension(".txt").target_tokens == 200
+    assert config.chunking.profile_for_extension(".MD").target_tokens == 260
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1

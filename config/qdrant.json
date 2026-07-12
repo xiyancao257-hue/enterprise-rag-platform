@@ -20,5 +20,12 @@
     "provider": "qdrant",
     "collection_name": "enterprise_rag_chunks",
     "url": "http://qdrant:6333"
+  },
+  "chunking": {
+    "default": {
+      "target_tokens": 220,
+      "max_tokens": 360
+    },
+    "by_extension": {}
   }
 }

@@ -62,5 +62,10 @@ class StructureAwareChunker:
             text=text,
             heading_path=heading_path,
             source_blocks=tuple(block.id for block in blocks),
-            metadata=dict(blocks[0].metadata),
+            metadata={
+                **blocks[0].metadata,
+                "chunking_strategy": "structure_aware",
+                "chunk_target_tokens": str(self.target_tokens),
+                "chunk_max_tokens": str(self.max_tokens),
+            },
         )

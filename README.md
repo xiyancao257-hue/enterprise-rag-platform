@@ -105,6 +105,24 @@ enterprise-rag query "What does AUTH-429 affect?" --config config/default.json -
 CLI flags override config values. This mirrors enterprise deployments where each environment can tune
 retrieval depth, graph expansion, and default access groups without changing application code.
 
+Chunking can also be configured globally or per file extension. This lets policy documents, Markdown
+manuals, and plain text notes use different chunk sizes without changing ingestion code.
+
+```json
+{
+  "chunking": {
+    "default": {"target_tokens": 220, "max_tokens": 360},
+    "by_extension": {
+      ".md": {"target_tokens": 260, "max_tokens": 420},
+      ".txt": {"target_tokens": 180, "max_tokens": 300}
+    }
+  }
+}
+```
+
+Chunking settings are stored in chunk metadata, so changing the chunking profile causes affected
+documents to be reprocessed instead of incorrectly reusing old chunks.
+
 `config/production.example.json` shows a production-style setup with Qdrant, Redis cache, Redis leases,
 API key auth, audit logging, ingestion source allowlists, and latency/cost/human-review guardrails.
 It is intentionally an example file: replace placeholder hashes and tune budgets before using it.

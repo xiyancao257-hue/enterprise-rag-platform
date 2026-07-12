@@ -101,7 +101,10 @@ class IngestJobRunner:
                 return
             metadata_overrides = self._metadata_overrides(job)
             store = JsonChunkStore(self.index_path)
-            report = IncrementalIngestPipeline(file_policy=IngestionFilePolicy.from_config(self.config.ingestion)).run(
+            report = IncrementalIngestPipeline(
+                file_policy=IngestionFilePolicy.from_config(self.config.ingestion),
+                chunking_config=self.config.chunking,
+            ).run(
                 Path(job.source_path),
                 store,
                 metadata_overrides=metadata_overrides,
