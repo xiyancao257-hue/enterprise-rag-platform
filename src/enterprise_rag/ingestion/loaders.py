@@ -5,12 +5,15 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, OcrUnavailableError
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.models import Document
 from enterprise_rag.text import normalize_text
 
 FILTER_EMPTY_TEXT = "empty_text"
+FILTER_OCR_UNAVAILABLE = "ocr_unavailable"
 FILTER_TEXT_EXTRACTION_FAILED = "text_extraction_failed"
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 
 @dataclass(frozen=True)
@@ -34,8 +37,10 @@ def load_documents(path: Path) -> list[Document]:
 def load_documents_with_report(
     path: Path,
     policy: IngestionFilePolicy | None = None,
+    ocr_adapter: OcrAdapter | None = None,
 ) -> LoadDocumentsResult:
     policy = policy or IngestionFilePolicy()
+    ocr_adapter = ocr_adapter or DisabledOcrAdapter()
     if path.is_file():
         files = [path]
     else:
@@ -51,7 +56,11 @@ def load_documents_with_report(
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=rejection_reason))
             continue
         try:
-            raw_text, loader_metadata = _read_file(file)
+            raw_text, loader_metadata = _read_file(file, ocr_adapter)
+        except OcrUnavailableError:
+            _count_filter_reason(filter_reasons, FILTER_OCR_UNAVAILABLE)
+            filtered_documents.append(FilteredDocument(source_path=str(file), reason=FILTER_OCR_UNAVAILABLE))
+            continue
         except Exception:
             _count_filter_reason(filter_reasons, FILTER_TEXT_EXTRACTION_FAILED)
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=FILTER_TEXT_EXTRACTION_FAILED))
@@ -88,11 +97,18 @@ def _count_filter_reason(filter_reasons: dict[str, int], reason: str) -> None:
     filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
 
 
-def _read_file(file: Path) -> tuple[str, dict[str, str]]:
+def _read_file(file: Path, ocr_adapter: OcrAdapter) -> tuple[str, dict[str, str]]:
     if file.suffix.lower() == ".csv":
         return _csv_to_markdown_table(file), {"source_format": "csv", "table_format": "markdown"}
     if file.suffix.lower() == ".pdf":
-        return _pdf_to_text(file)
+        text, metadata = _pdf_to_text(file)
+        if metadata["pdf_pages_with_text"] != "0":
+            return text, metadata
+        result = ocr_adapter.extract_text(file)
+        return result.text, {**metadata, **result.metadata, "source_format": "pdf_ocr"}
+    if file.suffix.lower() in IMAGE_EXTENSIONS:
+        result = ocr_adapter.extract_text(file)
+        return result.text, {**result.metadata, "source_format": "image_ocr"}
     return file.read_text(encoding="utf-8", errors="ignore"), {}
 
 

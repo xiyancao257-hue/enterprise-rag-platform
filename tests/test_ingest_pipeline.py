@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from enterprise_rag.config import ChunkingConfig, ChunkingProfileConfig
-from enterprise_rag.ingestion.loaders import load_documents, load_documents_with_report
+from enterprise_rag.ingestion.loaders import FILTER_OCR_UNAVAILABLE, load_documents, load_documents_with_report
+from enterprise_rag.ingestion.ocr import OcrResult
 from enterprise_rag.ingestion.pipeline import FILTER_LOW_QUALITY_TEXT, IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import FILTER_FILE_TOO_LARGE, FILTER_UNSUPPORTED_EXTENSION, IngestionFilePolicy
 from enterprise_rag.models import BlockType, Document
@@ -10,6 +11,14 @@ from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.processing.redaction import SensitiveDataRedactor
 from enterprise_rag.storage.json_store import JsonChunkStore
+
+
+class FakeOcrAdapter:
+    def extract_text(self, path: Path) -> OcrResult:
+        return OcrResult(
+            text="OCR extracted AUTH-429 escalation policy from image.",
+            metadata={"ocr_provider": "fake"},
+        )
 
 
 def test_load_documents_reads_supported_files(tmp_path: Path) -> None:
@@ -65,6 +74,55 @@ def test_load_documents_extracts_text_from_pdf(tmp_path: Path) -> None:
     assert "# Guide" in documents[0].text
     assert "## Page 1" in documents[0].text
     assert "Hybrid PDF retrieval notes" in documents[0].text
+
+
+def test_load_documents_filters_image_when_ocr_is_disabled(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    image_file = raw_dir / "scan.png"
+    image_file.write_bytes(b"fake image bytes")
+
+    result = load_documents_with_report(
+        raw_dir,
+        policy=IngestionFilePolicy(allowed_extensions=(".png",)),
+    )
+
+    assert result.documents == ()
+    assert result.filter_reasons == {FILTER_OCR_UNAVAILABLE: 1}
+    assert result.filtered_documents[0].source_path == str(image_file)
+
+
+def test_load_documents_uses_ocr_adapter_for_images(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("scan.png").write_bytes(b"fake image bytes")
+
+    result = load_documents_with_report(
+        raw_dir,
+        policy=IngestionFilePolicy(allowed_extensions=(".png",)),
+        ocr_adapter=FakeOcrAdapter(),
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].metadata["extension"] == ".png"
+    assert result.documents[0].metadata["source_format"] == "image_ocr"
+    assert result.documents[0].metadata["ocr_provider"] == "fake"
+    assert "AUTH-429 escalation policy" in result.documents[0].text
+
+
+def test_load_documents_routes_textless_pdf_to_ocr(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    pdf_file = raw_dir / "scan.pdf"
+    _write_minimal_pdf(pdf_file, "")
+
+    result = load_documents_with_report(raw_dir, ocr_adapter=FakeOcrAdapter())
+
+    assert len(result.documents) == 1
+    assert result.documents[0].metadata["extension"] == ".pdf"
+    assert result.documents[0].metadata["source_format"] == "pdf_ocr"
+    assert result.documents[0].metadata["pdf_pages_with_text"] == "0"
+    assert result.documents[0].metadata["ocr_provider"] == "fake"
 
 
 def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> None:
@@ -188,6 +246,24 @@ def test_incremental_ingest_preserves_csv_as_table_chunk(tmp_path: Path) -> None
     assert chunks[0].metadata["source_format"] == "csv"
     assert "| Auth Service | AUTH-429 | high |" in chunks[0].text
     assert chunks[0].metadata["chunking_strategy"] == "structure_aware"
+
+
+def test_incremental_ingest_indexes_image_ocr_text(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("scan.png").write_bytes(b"fake image bytes")
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline(
+        file_policy=IngestionFilePolicy(allowed_extensions=(".png",)),
+        ocr_adapter=FakeOcrAdapter(),
+    ).run(raw_dir, store)
+
+    chunks = store.load()
+    assert report.documents_new == 1
+    assert chunks[0].metadata["source_format"] == "image_ocr"
+    assert chunks[0].metadata["ocr_provider"] == "fake"
+    assert "AUTH-429 escalation policy" in chunks[0].text
 
 
 def test_incremental_ingest_reprocesses_when_chunking_config_changes(tmp_path: Path) -> None:
