@@ -12,6 +12,7 @@ from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter, create_pdf_page_renderer
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
+from enterprise_rag.ingestion.sync_manifest import JsonSourceSyncManifestStore
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
 from enterprise_rag.leases.base import LeaseStore
 from enterprise_rag.leases.in_memory import InMemoryLeaseStore
@@ -107,6 +108,7 @@ class IngestJobRunner:
                 ocr_adapter=create_ocr_adapter(self.config.ocr),
                 pdf_page_renderer=create_pdf_page_renderer(self.config.ocr),
                 chunking_config=self.config.chunking,
+                sync_manifest_store=JsonSourceSyncManifestStore(self.index_path.with_name("source_manifest.json")),
             ).run(
                 Path(job.source_path),
                 store,

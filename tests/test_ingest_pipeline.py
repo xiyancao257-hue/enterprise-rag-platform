@@ -5,6 +5,7 @@ from enterprise_rag.ingestion.loaders import FILTER_OCR_UNAVAILABLE, load_docume
 from enterprise_rag.ingestion.ocr import OcrResult
 from enterprise_rag.ingestion.pipeline import FILTER_LOW_QUALITY_TEXT, IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import FILTER_FILE_TOO_LARGE, FILTER_UNSUPPORTED_EXTENSION, IngestionFilePolicy
+from enterprise_rag.ingestion.sync_manifest import JsonSourceSyncManifestStore
 from enterprise_rag.models import BlockType, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -226,6 +227,54 @@ def test_incremental_ingest_preserves_connector_source_metadata(tmp_path: Path) 
     assert chunks[0].metadata["source_uri"] == source.resolve().as_uri()
     assert chunks[0].metadata["source_version"] == chunks[0].metadata["content_hash"]
     assert chunks[0].metadata["source_updated_at"]
+
+
+def test_incremental_ingest_updates_source_sync_manifest(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    manifest_store = JsonSourceSyncManifestStore(tmp_path / "source_manifest.json")
+
+    report = IncrementalIngestPipeline(sync_manifest_store=manifest_store).run(
+        raw_dir,
+        store,
+        metadata_overrides={"tenant_id": "tenant-a"},
+    )
+
+    entries = manifest_store.load()
+    assert report.documents_new == 1
+    assert len(entries) == 1
+    assert entries[0].tenant_id == "tenant-a"
+    assert entries[0].source_uri == source.resolve().as_uri()
+    assert entries[0].source_version == entries[0].content_hash
+    assert entries[0].status == "active"
+
+
+def test_incremental_ingest_marks_deleted_sources_in_manifest(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    source = raw_dir / "guide.md"
+    source.write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    manifest_store = JsonSourceSyncManifestStore(tmp_path / "source_manifest.json")
+    pipeline = IncrementalIngestPipeline(sync_manifest_store=manifest_store)
+
+    pipeline.run(raw_dir, store, metadata_overrides={"tenant_id": "tenant-a"})
+    source.unlink()
+    report = pipeline.run(raw_dir, store, metadata_overrides={"tenant_id": "tenant-a"})
+
+    entries = manifest_store.load()
+    assert report.documents_deleted == 1
+    assert entries[0].source_uri == source.resolve().as_uri()
+    assert entries[0].status == "deleted"
 
 
 def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> None:

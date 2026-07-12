@@ -29,6 +29,7 @@ from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter, create_pdf_page_renderer
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
+from enterprise_rag.ingestion.sync_manifest import JsonSourceSyncManifestStore
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.leases.factory import create_lease_store
@@ -246,6 +247,7 @@ def ingest(
         ocr_adapter=create_ocr_adapter(config.ocr),
         pdf_page_renderer=create_pdf_page_renderer(config.ocr),
         chunking_config=config.chunking,
+        sync_manifest_store=JsonSourceSyncManifestStore(index_path.with_name("source_manifest.json")),
     ).run(path, store, metadata_overrides=metadata_overrides, dry_run=dry_run)
     if dry_run:
         print("Dry run: index was not written.")

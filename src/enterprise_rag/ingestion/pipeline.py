@@ -8,6 +8,7 @@ from enterprise_rag.ingestion.connectors import LocalFileConnector, SourceConnec
 from enterprise_rag.ingestion.loaders import FilteredDocument
 from enterprise_rag.ingestion.ocr import OcrAdapter, PdfPageRenderer
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
+from enterprise_rag.ingestion.sync_manifest import SourceSyncManifestStore
 from enterprise_rag.models import Chunk, Document
 from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
@@ -46,6 +47,7 @@ class IncrementalIngestPipeline:
         ocr_adapter: OcrAdapter | None = None,
         pdf_page_renderer: PdfPageRenderer | None = None,
         source_connector: SourceConnector | None = None,
+        sync_manifest_store: SourceSyncManifestStore | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
@@ -60,6 +62,7 @@ class IncrementalIngestPipeline:
             ocr_adapter=self.ocr_adapter,
             pdf_page_renderer=self.pdf_page_renderer,
         )
+        self.sync_manifest_store = sync_manifest_store
 
     def run(
         self,
@@ -123,6 +126,12 @@ class IncrementalIngestPipeline:
         documents_deleted = len(deleted_sources)
         if not dry_run:
             store.save(next_chunks)
+            if self.sync_manifest_store is not None:
+                self.sync_manifest_store.update_from_documents(
+                    tenant_id=ingest_scope,
+                    documents=tuple(documents),
+                    deleted_source_uris=tuple(source_uri for _, source_uri in deleted_sources),
+                )
         return IngestReport(
             documents_loaded=len(documents),
             documents_new=documents_new,
