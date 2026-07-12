@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from enterprise_rag import cli
+from enterprise_rag.config import AppConfig
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
+from enterprise_rag.models import Chunk
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -114,3 +116,46 @@ def test_worker_cli_runs_one_polling_pass(tmp_path: Path, capsys: object) -> Non
     assert finished is not None
     assert finished.status == "succeeded"
     assert "Worker scanned 1 jobs" in output
+
+
+def test_eval_markdown_report_cli_writes_report_file(tmp_path: Path, capsys: object) -> None:
+    index_path = tmp_path / "chunks.json"
+    eval_path = tmp_path / "retrieval_eval.json"
+    output_path = tmp_path / "reports" / "eval.md"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    eval_path.write_text(
+        """
+        [
+          {
+            "id": "hybrid",
+            "query": "hybrid retrieval",
+            "expected_chunk_ids": ["hybrid"]
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    cli.eval_markdown_report(
+        eval_path,
+        index_path,
+        output_path,
+        "Portfolio Eval",
+        AppConfig(),
+        k=1,
+    )
+
+    output = capsys.readouterr().out
+    markdown = output_path.read_text(encoding="utf-8")
+    assert f"Wrote evaluation report to {output_path}" in output
+    assert "# Portfolio Eval" in markdown
+    assert "- Recall@1: 1.00" in markdown
+    assert "- Failures: 0" in markdown

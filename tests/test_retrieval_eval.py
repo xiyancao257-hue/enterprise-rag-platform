@@ -1,4 +1,6 @@
 from enterprise_rag.evaluation.metrics import precision_at_k, recall_at_k, reciprocal_rank
+from enterprise_rag.evaluation.readiness import ReadinessCheck, ReadinessReport
+from enterprise_rag.evaluation.reporting import EvaluationMarkdownReport, format_evaluation_markdown_report
 from enterprise_rag.evaluation.retrieval_eval import (
     RetrievalEvalCase,
     evaluate_retrieval_results,
@@ -212,3 +214,37 @@ def test_format_retrieval_eval_report_includes_warnings() -> None:
 
     assert "Warnings:" in formatted
     assert "- bad_eval_case: expected_text_contains did not match any chunk: missing text" in formatted
+
+
+def test_format_evaluation_markdown_report_includes_metrics_failures_and_readiness() -> None:
+    cases = [
+        RetrievalEvalCase(id="missing", query="unknown", expected_chunk_ids={"expected"}),
+    ]
+    retrieval_report = evaluate_retrieval_results(cases, {"missing": [hit("other", rank=1)]}, k=1)
+    readiness = ReadinessReport(
+        index_present=True,
+        chunk_count=2,
+        eval_present=True,
+        eval_case_count=1,
+        recall_at_k=0.0,
+        precision_at_k=0.0,
+        mrr=0.0,
+        query_log_present=False,
+        log_analysis=None,
+        self_healing_draft_present=False,
+        self_healing_suggestions_present=False,
+        enterprise_checks=(ReadinessCheck(name="eval_coverage", status="pass", detail="1 eval cases"),),
+        recommendations=("Improve retrieval recall before treating this system as production-ready.",),
+    )
+
+    markdown = format_evaluation_markdown_report(
+        EvaluationMarkdownReport(title="Demo Eval", retrieval=retrieval_report, readiness=readiness)
+    )
+
+    assert "# Demo Eval" in markdown
+    assert "## Retrieval Metrics" in markdown
+    assert "- Recall@1: 0.00" in markdown
+    assert "### missing" in markdown
+    assert "- Retrieved chunks: other" in markdown
+    assert "- eval_coverage: **pass** - 1 eval cases" in markdown
+    assert "- Improve retrieval recall before treating this system as production-ready." in markdown

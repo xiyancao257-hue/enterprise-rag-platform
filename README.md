@@ -47,6 +47,12 @@ enterprise-rag query "What does AUTH-429 affect?" \
 
 enterprise-rag eval data/eval/retrieval_eval.json --k 5
 
+enterprise-rag eval-report data/eval/retrieval_eval.json \
+  --index data/processed/chunks.json \
+  --output data/reports/evaluation.md \
+  --query-log data/logs/query_log.jsonl \
+  --self-healing-dir data/eval/self_healing
+
 enterprise-rag experiment data/eval/retrieval_eval.json --k-values 1 3 5 8
 
 enterprise-rag inspect-index
@@ -260,6 +266,7 @@ Observability and evaluation:
 - `observability/tracing.py` records retrieved, reranked, and final context hits for one query.
 - `observability/query_logging.py` writes JSONL query summaries for long-term analysis.
 - `evaluation/retrieval_eval.py` runs Recall@K, Precision@K, and MRR.
+- `evaluation/reporting.py` writes a Markdown evaluation artifact with metrics, failures, readiness checks, and recommendations.
 - `evaluation/readiness.py` summarizes index, eval, logs, self-healing artifacts, and recommendations.
 
 ## Self-Healing Workflow

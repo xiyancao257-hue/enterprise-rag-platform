@@ -18,6 +18,7 @@ from enterprise_rag.evaluation.evidence_suggestion import approve_suggested_evid
 from enterprise_rag.evaluation.experiments import format_retrieval_experiment_report, run_top_k_experiments
 from enterprise_rag.evaluation.index_inspection import format_index_quality_report, inspect_index
 from enterprise_rag.evaluation.readiness import build_readiness_report, format_readiness_report
+from enterprise_rag.evaluation.reporting import EvaluationMarkdownReport, format_evaluation_markdown_report
 from enterprise_rag.evaluation.retrieval_eval import (
     format_retrieval_eval_report,
     load_retrieval_eval_cases,
@@ -114,6 +115,23 @@ def main() -> None:
         help="Enable knowledge graph retrieval",
     )
     eval_parser.add_argument("--graph-max-hops", type=int, default=None)
+
+    eval_report_parser = subparsers.add_parser("eval-report", help="Write a Markdown evaluation report artifact")
+    eval_report_parser.add_argument("eval_path", type=Path)
+    eval_report_parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    eval_report_parser.add_argument("--config", type=Path, help="JSON config file for retrieval defaults")
+    eval_report_parser.add_argument("--output", type=Path, required=True)
+    eval_report_parser.add_argument("--title", default="Enterprise RAG Evaluation Report")
+    eval_report_parser.add_argument("--k", type=int, default=None)
+    eval_report_parser.add_argument("--query-log", type=Path)
+    eval_report_parser.add_argument("--self-healing-dir", type=Path)
+    eval_report_parser.add_argument(
+        "--enable-graph",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable knowledge graph retrieval",
+    )
+    eval_report_parser.add_argument("--graph-max-hops", type=int, default=None)
 
     experiment_parser = subparsers.add_parser("experiment", help="Run retrieval self-healing experiments")
     experiment_parser.add_argument("eval_path", type=Path)
@@ -219,6 +237,23 @@ def main() -> None:
         enable_graph = args.enable_graph if args.enable_graph is not None else config.retrieval.enable_graph
         graph_max_hops = args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
         eval_retrieval(args.eval_path, args.index, k, enable_graph, graph_max_hops)
+    elif args.command == "eval-report":
+        config = load_config(args.config)
+        k = args.k if args.k is not None else config.retrieval.top_k
+        enable_graph = args.enable_graph if args.enable_graph is not None else config.retrieval.enable_graph
+        graph_max_hops = args.graph_max_hops if args.graph_max_hops is not None else config.retrieval.graph_max_hops
+        eval_markdown_report(
+            args.eval_path,
+            args.index,
+            args.output,
+            args.title,
+            config,
+            k,
+            enable_graph,
+            graph_max_hops,
+            args.query_log,
+            args.self_healing_dir,
+        )
     elif args.command == "experiment":
         config = load_config(args.config)
         k_values = args.k_values if args.k_values is not None else list(config.retrieval.experiment_k_values)
@@ -441,6 +476,43 @@ def eval_retrieval(
     cases = load_retrieval_eval_cases(eval_path, chunks)
     report = run_retrieval_eval(cases, chunks, k=k, enable_graph=enable_graph, graph_max_hops=graph_max_hops)
     print(format_retrieval_eval_report(report))
+
+
+def eval_markdown_report(
+    eval_path: Path,
+    index_path: Path,
+    output_path: Path,
+    title: str,
+    config: AppConfig,
+    k: int,
+    enable_graph: bool = False,
+    graph_max_hops: int = 2,
+    query_log_path: Path | None = None,
+    self_healing_dir: Path | None = None,
+) -> None:
+    chunks = JsonChunkStore(index_path).load()
+    if not chunks:
+        raise SystemExit(f"No chunks found at {index_path}. Run `enterprise-rag ingest data/raw` first.")
+
+    cases = load_retrieval_eval_cases(eval_path, chunks)
+    retrieval_report = run_retrieval_eval(cases, chunks, k=k, enable_graph=enable_graph, graph_max_hops=graph_max_hops)
+    readiness = build_readiness_report(
+        chunks,
+        index_path=index_path,
+        eval_path=eval_path,
+        query_log_path=query_log_path,
+        self_healing_dir=self_healing_dir,
+        config=config,
+        k=k,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        format_evaluation_markdown_report(
+            EvaluationMarkdownReport(title=title, retrieval=retrieval_report, readiness=readiness)
+        ),
+        encoding="utf-8",
+    )
+    print(f"Wrote evaluation report to {output_path}")
 
 
 def experiment_retrieval(
