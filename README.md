@@ -203,6 +203,36 @@ Useful production RAG metrics include:
 - `enterprise_rag_ingest_job_failures_total`
 - `enterprise_rag_feedback_total`
 
+Latency and cost budget load test:
+
+```bash
+uv run python scripts/load_test.py \
+  --url http://localhost:8000/query \
+  --api-key "$ENTERPRISE_RAG_API_KEY" \
+  --tenant acme \
+  --query "What does AUTH-429 affect?" \
+  --requests 50 \
+  --concurrency 5 \
+  --p95-threshold-ms 3000 \
+  --avg-cost-threshold-usd 0.01 \
+  --total-cost-threshold-usd 1.00 \
+  --output-json data/reports/load_test.json
+```
+
+Compare a new run against a previous JSON baseline:
+
+```bash
+uv run python scripts/load_test.py \
+  --url http://localhost:8000/query \
+  --api-key "$ENTERPRISE_RAG_API_KEY" \
+  --tenant acme \
+  --query "What does AUTH-429 affect?" \
+  --requests 50 \
+  --concurrency 5 \
+  --baseline data/reports/load_test.json \
+  --max-p95-regression-pct 20
+```
+
 When API key auth is enabled, protected API calls also require `X-Tenant-ID`:
 
 ```bash
