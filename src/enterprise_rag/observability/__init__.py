@@ -1,3 +1,4 @@
+from enterprise_rag.observability.feedback import FeedbackRecord, JsonFeedbackStore
 from enterprise_rag.observability.log_analysis import (
     LogAnalysisReport,
     analyze_query_log,
@@ -8,6 +9,8 @@ from enterprise_rag.observability.tracing import QueryTrace, TraceHit, format_qu
 
 __all__ = [
     "LogAnalysisReport",
+    "FeedbackRecord",
+    "JsonFeedbackStore",
     "QueryLogger",
     "QueryLogRecord",
     "QueryTrace",

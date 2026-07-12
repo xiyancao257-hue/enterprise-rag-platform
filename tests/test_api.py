@@ -209,6 +209,75 @@ def test_query_stream_returns_ndjson_events(tmp_path) -> None:
     assert events[-1] == {"event": "done"}
 
 
+def test_feedback_endpoint_records_feedback_summary_and_metrics(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.post(
+        "/feedback",
+        headers={REQUEST_ID_HEADER: "req_feedback_123"},
+        json={
+            "query_request_id": "req_query_123",
+            "query": "What is hybrid retrieval?",
+            "answer": "Hybrid retrieval combines BM25 and vector search.",
+            "rating": "negative",
+            "citation_chunk_ids": ["chunk_hybrid"],
+            "labels": ["wrong_citation", "incomplete_answer"],
+            "comment": "Citation did not support the answer.",
+            "user_id": "user-1",
+        },
+    )
+    summary_response = client.get("/admin/feedback/summary")
+    metrics = client.get("/metrics").text
+
+    payload = response.json()
+    summary = summary_response.json()
+    feedback_path = index_path.with_name("feedback.jsonl")
+    assert response.status_code == 201
+    assert response.headers[REQUEST_ID_HEADER] == "req_feedback_123"
+    assert payload["request_id"] == "req_feedback_123"
+    assert payload["feedback_id"].startswith("fb_")
+    assert feedback_path.exists()
+    assert "wrong_citation" in feedback_path.read_text(encoding="utf-8")
+    assert summary == {
+        "total": 1,
+        "by_rating": {"negative": 1},
+        "by_label": {"wrong_citation": 1, "incomplete_answer": 1},
+    }
+    assert "enterprise_rag_feedback_total 1" in metrics
+
+
+def test_feedback_requires_api_key_and_tenant_when_auth_enabled(tmp_path) -> None:
+    app = create_app(
+        index_path=tmp_path / "chunks.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+    payload = {
+        "query_request_id": "req_query_123",
+        "query": "What is hybrid retrieval?",
+        "answer": "Hybrid retrieval combines BM25 and vector search.",
+        "rating": "positive",
+    }
+
+    missing_key_response = client.post("/feedback", json=payload)
+    missing_tenant_response = client.post("/feedback", headers={API_KEY_HEADER: "correct-key"}, json=payload)
+    allowed_response = client.post(
+        "/feedback",
+        headers={API_KEY_HEADER: "correct-key", TENANT_ID_HEADER: "acme"},
+        json=payload,
+    )
+
+    assert missing_key_response.status_code == 401
+    assert missing_tenant_response.status_code == 400
+    assert allowed_response.status_code == 201
+
+
 def test_query_completed_writes_audit_event(tmp_path) -> None:
     index_path = tmp_path / "chunks.json"
     audit_path = tmp_path / "audit.jsonl"

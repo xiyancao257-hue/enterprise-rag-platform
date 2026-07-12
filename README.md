@@ -265,6 +265,7 @@ Observability and evaluation:
 
 - `observability/tracing.py` records retrieved, reranked, and final context hits for one query.
 - `observability/query_logging.py` writes JSONL query summaries for long-term analysis.
+- `observability/feedback.py` stores user feedback for online quality review and self-healing backlogs.
 - `evaluation/ab_testing.py` provides deterministic experiment assignment for comparing retrieval variants.
 - `evaluation/retrieval_eval.py` runs Recall@K, Precision@K, and MRR.
 - `evaluation/reporting.py` writes a Markdown evaluation artifact with metrics, failures, readiness checks, and recommendations.

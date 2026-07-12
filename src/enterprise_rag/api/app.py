@@ -29,6 +29,7 @@ from enterprise_rag.llm.factory import create_llm_client
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAuditLogger, NullAuditLogger
 from enterprise_rag.observability.costs import LLMCostEstimator
+from enterprise_rag.observability.feedback import FeedbackRecord, JsonFeedbackStore
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.answer_generation import LLMAnswerGenerator
 from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
@@ -39,6 +40,7 @@ from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
+DEFAULT_FEEDBACK = Path("data/feedback/feedback.jsonl")
 REQUEST_ID_HEADER = "X-Request-ID"
 API_KEY_HEADER = "X-API-Key"
 TENANT_ID_HEADER = "X-Tenant-ID"
@@ -104,6 +106,7 @@ class MetricsCollector:
         self.ingest_job_latency_ms_count = 0
         self.lease_acquire_success_total = 0
         self.lease_acquire_failures_total = 0
+        self.feedback_total = 0
 
     def record_http_request(self) -> None:
         self.http_requests_total += 1
@@ -158,6 +161,9 @@ class MetricsCollector:
     def record_lease_acquire_failure(self) -> None:
         self.lease_acquire_failures_total += 1
 
+    def record_feedback(self) -> None:
+        self.feedback_total += 1
+
     def render_prometheus(self) -> str:
         metrics = {
             "enterprise_rag_http_requests_total": self.http_requests_total,
@@ -180,6 +186,7 @@ class MetricsCollector:
             "enterprise_rag_ingest_job_latency_ms_count": self.ingest_job_latency_ms_count,
             "enterprise_rag_lease_acquire_success_total": self.lease_acquire_success_total,
             "enterprise_rag_lease_acquire_failures_total": self.lease_acquire_failures_total,
+            "enterprise_rag_feedback_total": self.feedback_total,
         }
         for reason, count in sorted(self.ingest_job_skips_by_reason.items()):
             metrics[f"enterprise_rag_ingest_job_skipped_reason_{_metric_suffix(reason)}_total"] = count
@@ -268,6 +275,23 @@ class QueryResponse(BaseModel):
     cost: CostResponse = Field(default_factory=CostResponse)
     guardrails: QueryGuardrailResponse = Field(default_factory=QueryGuardrailResponse)
     trace: QueryTraceResponse | None = None
+
+
+class FeedbackRequest(BaseModel):
+    query_request_id: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    answer: str = Field(min_length=1)
+    rating: str = Field(pattern="^(positive|negative|neutral)$")
+    citation_chunk_ids: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+    comment: str = ""
+    user_id: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    request_id: str
+    feedback_id: str
+    status: str = "recorded"
 
 
 class HealthResponse(BaseModel):
@@ -396,6 +420,12 @@ class OpsStatusResponse(BaseModel):
     security: OpsSecurityStatusResponse
 
 
+class FeedbackSummaryResponse(BaseModel):
+    total: int
+    by_rating: dict[str, int]
+    by_label: dict[str, int]
+
+
 def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
@@ -418,6 +448,7 @@ def create_app(
     app.state.index_version_store = JsonIndexVersionStore(index_path.with_name("index_version.json"))
     app.state.config = config
     app.state.metrics = MetricsCollector()
+    app.state.feedback_store = JsonFeedbackStore(index_path.with_name(DEFAULT_FEEDBACK.name))
     app.state.query_guard = QueryGuard()
     app.state.rate_limiter = FixedWindowRateLimiter()
     app.state.embedding_cache = create_cache(config.cache)
@@ -530,6 +561,11 @@ def create_app(
                 rate_limit_window_seconds=app.state.config.api_security.rate_limit_window_seconds,
             ),
         )
+
+    @app.get("/admin/feedback/summary", response_model=FeedbackSummaryResponse)
+    def feedback_summary(request: Request) -> FeedbackSummaryResponse:
+        _authorize_request(request, app.state.config)
+        return _feedback_summary(app.state.feedback_store.load())
 
     @app.get("/admin/index/versions", response_model=list[IndexVersionResponse])
     def list_index_versions(request: Request) -> list[IndexVersionResponse]:
@@ -741,6 +777,51 @@ def create_app(
         response = query(payload, request)
         return StreamingResponse(_stream_query_response(response), media_type="application/x-ndjson")
 
+    @app.post("/feedback", response_model=FeedbackResponse, status_code=201)
+    def submit_feedback(payload: FeedbackRequest, request: Request) -> FeedbackResponse:
+        auth_context = _authorize_request(request, app.state.config)
+        tenant_id = _resolve_tenant_id(request, app.state.config, auth_context)
+        feedback_id = f"fb_{uuid4().hex}"
+        record = FeedbackRecord(
+            feedback_id=feedback_id,
+            request_id=payload.query_request_id,
+            query=payload.query,
+            answer=payload.answer,
+            rating=payload.rating,
+            tenant_id=tenant_id,
+            user_id=payload.user_id,
+            citation_chunk_ids=tuple(payload.citation_chunk_ids),
+            labels=tuple(payload.labels),
+            comment=payload.comment,
+        )
+        app.state.feedback_store.append(record)
+        app.state.metrics.record_feedback()
+        app.state.audit_logger.log(
+            AuditEvent(
+                event_type="feedback.recorded",
+                request_id=request.state.request_id,
+                tenant_id=tenant_id,
+                principal=_audit_principal(request, auth_context),
+                attributes={
+                    "feedback_id": feedback_id,
+                    "query_request_id": payload.query_request_id,
+                    "rating": payload.rating,
+                    "labels": payload.labels,
+                    "citation_chunk_ids": payload.citation_chunk_ids,
+                },
+            )
+        )
+        _log_event(
+            "feedback_recorded",
+            request_id=request.state.request_id,
+            feedback_id=feedback_id,
+            query_request_id=payload.query_request_id,
+            tenant_id=tenant_id,
+            rating=payload.rating,
+            labels=payload.labels,
+        )
+        return FeedbackResponse(request_id=request.state.request_id, feedback_id=feedback_id)
+
     @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)
     def create_ingest_job(
         payload: IngestJobRequest,
@@ -932,6 +1013,16 @@ def _cache_status(provider: str, cache: object) -> OpsCacheStatusResponse:
         misses=getattr(cache, "misses", None),
         entries=len(entries) if isinstance(entries, dict) else None,
     )
+
+
+def _feedback_summary(records: list[FeedbackRecord]) -> FeedbackSummaryResponse:
+    by_rating: dict[str, int] = {}
+    by_label: dict[str, int] = {}
+    for record in records:
+        by_rating[record.rating] = by_rating.get(record.rating, 0) + 1
+        for label in record.labels:
+            by_label[label] = by_label.get(label, 0) + 1
+    return FeedbackSummaryResponse(total=len(records), by_rating=by_rating, by_label=by_label)
 
 
 def _cost_response(cost: object | None) -> CostResponse:
