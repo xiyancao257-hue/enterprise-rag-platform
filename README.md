@@ -94,6 +94,38 @@ enterprise-rag query "What does AUTH-429 affect?" --config config/default.json -
 CLI flags override config values. This mirrors enterprise deployments where each environment can tune
 retrieval depth, graph expansion, and default access groups without changing application code.
 
+`config/production.example.json` shows a production-style setup with Qdrant, Redis cache, Redis leases,
+API key auth, audit logging, ingestion source allowlists, and latency/cost/human-review guardrails.
+It is intentionally an example file: replace placeholder hashes and tune budgets before using it.
+
+Generate a SHA-256 API key hash:
+
+```bash
+python -c 'import hashlib; print(hashlib.sha256(b"replace-with-real-api-key").hexdigest())'
+```
+
+Run a readiness check against the production-style config:
+
+```bash
+enterprise-rag readiness-report \
+  --config config/production.example.json \
+  --index data/processed/chunks.json \
+  --eval data/eval/retrieval_eval.json \
+  --query-log data/logs/query_log.jsonl \
+  --self-healing-dir data/eval/self_healing \
+  --k 5
+```
+
+When API key auth is enabled, protected API calls also require `X-Tenant-ID`:
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
+  -H "X-Tenant-ID: acme" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What does AUTH-429 affect?","top_k":3}'
+```
+
 ## Current Architecture
 
 ```text

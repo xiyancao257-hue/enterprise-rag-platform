@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from enterprise_rag.config import AppConfig, load_config, parse_config
 
 
@@ -149,3 +151,15 @@ def test_load_config_from_json_file(tmp_path) -> None:
     assert config.retrieval.enable_graph is True
     assert config.retrieval.graph_max_hops == 2
     assert config.security.default_user_groups == ("admin",)
+
+
+def test_production_example_config_loads() -> None:
+    config = load_config(Path("config/production.example.json"))
+
+    assert config.api_security.require_api_key is True
+    assert config.vector_index.provider == "qdrant"
+    assert config.cache.provider == "redis"
+    assert config.leases.provider == "redis"
+    assert config.audit.enabled is True
+    assert config.guardrails.max_estimated_cost_usd == 0.02
+    assert config.ingestion.allowed_source_roots

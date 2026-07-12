@@ -1,0 +1,68 @@
+{
+  "retrieval": {
+    "top_k": 6,
+    "enable_graph": true,
+    "graph_max_hops": 2,
+    "experiment_k_values": [3, 5, 8, 10]
+  },
+  "security": {
+    "default_user_groups": []
+  },
+  "api_security": {
+    "require_api_key": true,
+    "api_key_env_var": "ENTERPRISE_RAG_API_KEYS",
+    "api_key_hashes": ["replace-with-sha256-api-key-hash"],
+    "api_keys": [
+      {
+        "key_hash": "replace-with-sha256-tenant-api-key-hash",
+        "allowed_tenants": ["acme"]
+      }
+    ],
+    "rate_limit_requests": 120,
+    "rate_limit_window_seconds": 60
+  },
+  "vector_index": {
+    "provider": "qdrant",
+    "collection_name": "enterprise_rag_chunks_prod",
+    "url": "http://qdrant:6333"
+  },
+  "jobs": {
+    "running_timeout_seconds": 1800,
+    "worker_poll_seconds": 2.0
+  },
+  "ingestion": {
+    "allowed_source_roots": ["data/raw", "/mnt/enterprise-rag/sources"],
+    "allowed_extensions": [".txt", ".md"],
+    "max_file_bytes": 10000000
+  },
+  "llm": {
+    "provider": "stub",
+    "model": "gpt-4.1-mini",
+    "input_cost_per_1k_tokens": 0.00015,
+    "output_cost_per_1k_tokens": 0.0006
+  },
+  "guardrails": {
+    "min_citations": 1,
+    "min_top_score": 0.01,
+    "min_evidence_tokens": 8,
+    "max_estimated_cost_usd": 0.02,
+    "max_latency_ms": 3000,
+    "sensitive_terms": ["legal", "medical", "finance", "security", "compliance"]
+  },
+  "audit": {
+    "enabled": true,
+    "path": "data/audit/audit.jsonl"
+  },
+  "leases": {
+    "provider": "redis",
+    "url": "redis://redis:6379/0",
+    "prefix": "enterprise-rag-prod"
+  },
+  "cache": {
+    "provider": "redis",
+    "url": "redis://redis:6379/0",
+    "prefix": "enterprise-rag-prod",
+    "query_ttl_seconds": 300,
+    "embedding_ttl_seconds": 86400
+  }
+}
