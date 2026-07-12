@@ -352,6 +352,50 @@ class IndexRollbackResponse(BaseModel):
     active_version: IndexVersionResponse
 
 
+class OpsIndexStatusResponse(BaseModel):
+    path: str
+    exists: bool
+    chunk_count: int
+    current_version: str
+    version_count: int
+
+
+class OpsJobsStatusResponse(BaseModel):
+    total: int
+    by_status: dict[str, int]
+
+
+class OpsCacheStatusResponse(BaseModel):
+    provider: str
+    hits: int | None = None
+    misses: int | None = None
+    entries: int | None = None
+
+
+class OpsProvidersStatusResponse(BaseModel):
+    vector_index: str
+    llm: str
+    embedding: str
+    cache: str
+    leases: str
+
+
+class OpsSecurityStatusResponse(BaseModel):
+    api_key_required: bool
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+
+
+class OpsStatusResponse(BaseModel):
+    request_id: str
+    index: OpsIndexStatusResponse
+    jobs: OpsJobsStatusResponse
+    query_cache: OpsCacheStatusResponse
+    embedding_cache: OpsCacheStatusResponse
+    providers: OpsProvidersStatusResponse
+    security: OpsSecurityStatusResponse
+
+
 def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
@@ -454,6 +498,38 @@ def create_app(
             k=k,
         )
         return _readiness_response(request.state.request_id, report)
+
+    @app.get("/admin/ops/status", response_model=OpsStatusResponse)
+    def ops_status(request: Request) -> OpsStatusResponse:
+        _authorize_request(request, app.state.config)
+        chunks = JsonChunkStore(app.state.index_path).load()
+        versions = app.state.index_version_store.history()
+        jobs = app.state.ingest_jobs.list()
+        return OpsStatusResponse(
+            request_id=request.state.request_id,
+            index=OpsIndexStatusResponse(
+                path=str(app.state.index_path),
+                exists=app.state.index_path.exists(),
+                chunk_count=len(chunks),
+                current_version=app.state.index_version_store.current_id(app.state.index_path),
+                version_count=len(versions),
+            ),
+            jobs=OpsJobsStatusResponse(total=len(jobs), by_status=_job_status_counts(jobs)),
+            query_cache=_cache_status(app.state.config.cache.provider, app.state.query_cache),
+            embedding_cache=_cache_status(app.state.config.cache.provider, app.state.embedding_cache),
+            providers=OpsProvidersStatusResponse(
+                vector_index=app.state.config.vector_index.provider,
+                llm=app.state.config.llm.provider,
+                embedding=app.state.config.embedding.provider,
+                cache=app.state.config.cache.provider,
+                leases=app.state.config.leases.provider,
+            ),
+            security=OpsSecurityStatusResponse(
+                api_key_required=app.state.config.api_security.require_api_key,
+                rate_limit_requests=app.state.config.api_security.rate_limit_requests,
+                rate_limit_window_seconds=app.state.config.api_security.rate_limit_window_seconds,
+            ),
+        )
 
     @app.get("/admin/index/versions", response_model=list[IndexVersionResponse])
     def list_index_versions(request: Request) -> list[IndexVersionResponse]:
@@ -839,6 +915,23 @@ def _stream_query_response(response: QueryResponse) -> Iterable[str]:
 
 def _json_line(payload: dict[str, object]) -> str:
     return json.dumps(payload, sort_keys=True) + "\n"
+
+
+def _job_status_counts(jobs: list[IngestJobRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for job in jobs:
+        counts[job.status] = counts.get(job.status, 0) + 1
+    return counts
+
+
+def _cache_status(provider: str, cache: object) -> OpsCacheStatusResponse:
+    entries = getattr(cache, "entries", None)
+    return OpsCacheStatusResponse(
+        provider=provider,
+        hits=getattr(cache, "hits", None),
+        misses=getattr(cache, "misses", None),
+        entries=len(entries) if isinstance(entries, dict) else None,
+    )
 
 
 def _cost_response(cost: object | None) -> CostResponse:

@@ -71,6 +71,56 @@ def test_readiness_reports_enterprise_checks(tmp_path) -> None:
     assert "Resolve failing enterprise readiness checks before production rollout." in payload["recommendations"]
 
 
+def test_admin_ops_status_summarizes_runtime_state(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    version = JsonIndexVersionStore(index_path.with_name("index_version.json")).bump(
+        reason="test",
+        index_path=index_path,
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+    client.post("/ingest-jobs", json={"source_path": str(raw_dir), "dry_run": True})
+    response = client.get("/admin/ops/status")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["request_id"] == response.headers[REQUEST_ID_HEADER]
+    assert payload["index"]["exists"] is True
+    assert payload["index"]["chunk_count"] == 1
+    assert payload["index"]["current_version"] == version.version_id
+    assert payload["index"]["version_count"] == 1
+    assert payload["jobs"]["total"] == 1
+    assert payload["jobs"]["by_status"] == {"succeeded": 1}
+    assert payload["query_cache"]["provider"] == "memory"
+    assert payload["query_cache"]["misses"] == 1
+    assert payload["query_cache"]["entries"] == 1
+    assert payload["embedding_cache"]["provider"] == "memory"
+    assert payload["providers"] == {
+        "vector_index": "memory",
+        "llm": "stub",
+        "embedding": "hashing",
+        "cache": "memory",
+        "leases": "memory",
+    }
+    assert payload["security"]["api_key_required"] is False
+
+
 def test_query_returns_answer_plan_citations_and_request_id(tmp_path, caplog) -> None:
     index_path = tmp_path / "chunks.json"
     JsonChunkStore(index_path).save(
@@ -503,6 +553,25 @@ def test_readiness_requires_api_key_when_auth_enabled(tmp_path) -> None:
 
     denied_response = client.get("/readiness")
     allowed_response = client.get("/readiness", headers={API_KEY_HEADER: "correct-key"})
+
+    assert denied_response.status_code == 401
+    assert allowed_response.status_code == 200
+
+
+def test_admin_ops_status_requires_api_key_when_auth_enabled(tmp_path) -> None:
+    app = create_app(
+        index_path=tmp_path / "missing.json",
+        config=AppConfig(
+            api_security=ApiSecurityConfig(
+                require_api_key=True,
+                api_key_hashes=(_hash_test_key("correct-key"),),
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    denied_response = client.get("/admin/ops/status")
+    allowed_response = client.get("/admin/ops/status", headers={API_KEY_HEADER: "correct-key"})
 
     assert denied_response.status_code == 401
     assert allowed_response.status_code == 200
