@@ -267,6 +267,7 @@ Observability and evaluation:
 - `observability/query_logging.py` writes JSONL query summaries for long-term analysis.
 - `observability/feedback.py` stores user feedback for online quality review and self-healing backlogs.
 - `evaluation/ab_testing.py` provides deterministic experiment assignment for comparing retrieval variants.
+- `evaluation/llm_judge.py` supports rubric-based, blinded answer judging with bias-control metadata.
 - `evaluation/retrieval_eval.py` runs Recall@K, Precision@K, and MRR.
 - `evaluation/reporting.py` writes a Markdown evaluation artifact with metrics, failures, readiness checks, and recommendations.
 - `evaluation/readiness.py` summarizes index, eval, logs, self-healing artifacts, and recommendations.
