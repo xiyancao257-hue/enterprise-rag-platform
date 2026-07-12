@@ -1,0 +1,20 @@
+{
+  "objects": [
+    {
+      "key": "knowledge-base/enterprise_rag_notes.md",
+      "path": "enterprise_rag_notes.md",
+      "etag": "example-etag-enterprise-rag-notes",
+      "version_id": "example-version-1",
+      "last_modified": "2026-07-12T00:00:00Z",
+      "allowed_groups": ["engineering", "support"]
+    },
+    {
+      "key": "knowledge-base/kg_demo.md",
+      "path": "kg_demo.md",
+      "etag": "example-etag-kg-demo",
+      "version_id": "example-version-2",
+      "last_modified": "2026-07-12T00:00:00Z",
+      "allowed_groups": ["engineering"]
+    }
+  ]
+}

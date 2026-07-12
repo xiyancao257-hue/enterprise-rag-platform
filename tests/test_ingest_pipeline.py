@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from enterprise_rag.config import ChunkingConfig, ChunkingProfileConfig
+from enterprise_rag.ingestion.connectors import S3LikeConnector
 from enterprise_rag.ingestion.loaders import FILTER_OCR_UNAVAILABLE, load_documents, load_documents_with_report
 from enterprise_rag.ingestion.ocr import OcrResult
 from enterprise_rag.ingestion.pipeline import FILTER_LOW_QUALITY_TEXT, IncrementalIngestPipeline
@@ -228,6 +229,49 @@ def test_incremental_ingest_preserves_connector_source_metadata(tmp_path: Path) 
     assert chunks[0].metadata["source_uri"] == source.resolve().as_uri()
     assert chunks[0].metadata["source_version"] == chunks[0].metadata["content_hash"]
     assert chunks[0].metadata["source_updated_at"]
+
+
+def test_incremental_ingest_accepts_s3_like_connector_metadata(tmp_path: Path) -> None:
+    source_root = tmp_path / "objects"
+    source_root.mkdir()
+    source_root.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        """
+        [
+          {
+            "key": "docs/guide.md",
+            "path": "guide.md",
+            "etag": "etag-1",
+            "version_id": "version-1",
+            "last_modified": "2026-07-12T00:00:00Z",
+            "allowed_groups": ["engineering"]
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    manifest_store = JsonSourceSyncManifestStore(tmp_path / "source_manifest.json")
+    connector = S3LikeConnector(bucket="enterprise-docs", manifest_path=manifest)
+
+    report = IncrementalIngestPipeline(
+        source_connector=connector,
+        sync_manifest_store=manifest_store,
+    ).run(source_root, store, metadata_overrides={"tenant_id": "tenant-a"})
+
+    chunks = store.load()
+    sync_entries = manifest_store.load()
+    assert report.documents_new == 1
+    assert chunks[0].metadata["source_system"] == "s3"
+    assert chunks[0].metadata["source_uri"] == "s3://enterprise-docs/docs/guide.md"
+    assert chunks[0].metadata["source_version"] == "version-1"
+    assert chunks[0].metadata["allowed_groups"] == "engineering"
+    assert sync_entries[0].source_uri == "s3://enterprise-docs/docs/guide.md"
+    assert sync_entries[0].status == "active"
 
 
 def test_incremental_ingest_updates_source_sync_manifest(tmp_path: Path) -> None:

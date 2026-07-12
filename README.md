@@ -216,6 +216,7 @@ Query Logs
 Ingestion:
 
 - `ingestion/connectors.py` defines source connectors; `LocalFileConnector` preserves source metadata for local files.
+- `S3LikeConnector` demonstrates cloud-object ingestion with pagination, source versioning, etags, and ACL metadata.
 - `ingestion/loaders.py` loads local `.txt`, `.md`, `.csv`, and text-based `.pdf` documents.
 - `.csv` files are converted into Markdown-style tables before parsing.
 - `.pdf` files use text extraction and preserve page markers before parsing.
