@@ -206,6 +206,10 @@ curl -X POST http://localhost:8000/query \
   -d '{"query":"What does AUTH-429 affect?","top_k":3}'
 ```
 
+You can also enable config-driven experiment assignment. In that mode, headers still override the config,
+but ordinary requests are deterministically assigned to a configured variant by tenant and normalized query.
+See `config/production.example.json` for a disabled-by-default `experiments` section.
+
 ## Current Architecture
 
 For the full system diagram and interview walkthrough, see [`docs/architecture.md`](docs/architecture.md).

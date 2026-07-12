@@ -19,6 +19,7 @@ from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config, load_config_from_env
 from enterprise_rag.embeddings.factory import create_embedding_model
+from enterprise_rag.evaluation.ab_testing import ExperimentAssigner, ExperimentVariant, assignment_key
 from enterprise_rag.evaluation.readiness import ReadinessReport, build_readiness_report
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
@@ -656,7 +657,7 @@ def create_app(
         user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
         mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
         index_version = app.state.index_version_store.current_id(app.state.index_path)
-        experiment = _experiment_response(request)
+        experiment = _experiment_response(request, config, tenant_id, payload.query)
         query_cache_key = build_query_cache_key(
             query=payload.query,
             tenant_id=tenant_id,
@@ -1034,15 +1035,44 @@ def _cache_status(provider: str, cache: object) -> OpsCacheStatusResponse:
     )
 
 
-def _experiment_response(request: Request) -> ExperimentResponse | None:
+def _experiment_response(
+    request: Request,
+    config: AppConfig,
+    tenant_id: str | None,
+    query: str,
+) -> ExperimentResponse | None:
     name = request.headers.get(EXPERIMENT_NAME_HEADER, "").strip()
     variant = request.headers.get(EXPERIMENT_VARIANT_HEADER, "").strip()
-    if not name and not variant:
+    manual_assignment_key = request.headers.get(EXPERIMENT_KEY_HEADER)
+    if name or variant:
+        return ExperimentResponse(
+            name=name or "manual",
+            variant=variant or "unspecified",
+            assignment_key=manual_assignment_key,
+        )
+    if not config.experiments.enabled or not config.experiments.variants:
         return None
+    assigner = ExperimentAssigner(
+        config.experiments.name,
+        tuple(
+            ExperimentVariant(
+                name=variant_config.name,
+                traffic_weight=variant_config.traffic_weight,
+                retrieval_profile=variant_config.retrieval_profile,
+            )
+            for variant_config in config.experiments.variants
+        ),
+    )
+    key = manual_assignment_key or assignment_key(
+        tenant_id=tenant_id,
+        user_id=None,
+        query=query,
+    )
+    assignment = assigner.assign(key)
     return ExperimentResponse(
-        name=name or "manual",
-        variant=variant or "unspecified",
-        assignment_key=request.headers.get(EXPERIMENT_KEY_HEADER),
+        name=assignment.experiment_name,
+        variant=assignment.variant_name,
+        assignment_key=assignment.assignment_key,
     )
 
 

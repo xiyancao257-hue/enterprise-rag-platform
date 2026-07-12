@@ -121,6 +121,22 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "query_ttl_seconds": 120,
                 "embedding_ttl_seconds": 3600,
             },
+            "experiments": {
+                "enabled": True,
+                "name": "retrieval_profile",
+                "variants": [
+                    {
+                        "name": "baseline",
+                        "traffic_weight": 50,
+                        "retrieval_profile": {"top_k": 5, "enable_graph": False},
+                    },
+                    {
+                        "name": "graph_candidate",
+                        "traffic_weight": 50,
+                        "retrieval_profile": {"top_k": 5, "enable_graph": True},
+                    },
+                ],
+            },
         }
     )
 
@@ -192,6 +208,10 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.cache.prefix == "test-rag"
     assert config.cache.query_ttl_seconds == 120
     assert config.cache.embedding_ttl_seconds == 3600
+    assert config.experiments.enabled is True
+    assert config.experiments.name == "retrieval_profile"
+    assert config.experiments.variants[0].name == "baseline"
+    assert config.experiments.variants[0].retrieval_profile == {"top_k": 5, "enable_graph": False}
 
 
 def test_load_config_from_json_file(tmp_path) -> None:

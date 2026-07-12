@@ -144,6 +144,20 @@ class CacheConfig:
 
 
 @dataclass(frozen=True)
+class ExperimentVariantConfig:
+    name: str
+    traffic_weight: int = 1
+    retrieval_profile: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    enabled: bool = False
+    name: str = "retrieval_profile"
+    variants: tuple[ExperimentVariantConfig, ...] = ()
+
+
+@dataclass(frozen=True)
 class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
@@ -159,6 +173,7 @@ class AppConfig:
     audit: AuditConfig = field(default_factory=AuditConfig)
     leases: LeaseConfig = field(default_factory=LeaseConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
+    experiments: ExperimentConfig = field(default_factory=ExperimentConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -194,6 +209,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     audit_data = _section(data, "audit")
     leases_data = _section(data, "leases")
     cache_data = _section(data, "cache")
+    experiments_data = _section(data, "experiments")
 
     return AppConfig(
         retrieval=RetrievalConfig(
@@ -326,6 +342,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             query_ttl_seconds=int(cache_data.get("query_ttl_seconds", CacheConfig.query_ttl_seconds)),
             embedding_ttl_seconds=int(cache_data.get("embedding_ttl_seconds", CacheConfig.embedding_ttl_seconds)),
         ),
+        experiments=ExperimentConfig(
+            enabled=bool(experiments_data.get("enabled", ExperimentConfig.enabled)),
+            name=str(experiments_data.get("name", ExperimentConfig.name)),
+            variants=_parse_experiment_variants(experiments_data.get("variants", [])),
+        ),
     )
 
 
@@ -379,3 +400,26 @@ def _parse_api_key_credentials(value: Any) -> tuple[ApiKeyCredential, ...]:
             )
         )
     return tuple(credentials)
+
+
+def _parse_experiment_variants(value: Any) -> tuple[ExperimentVariantConfig, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Config field `experiments.variants` must be a list.")
+
+    variants = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Each `experiments.variants` entry must be a JSON object.")
+        retrieval_profile = item.get("retrieval_profile", {})
+        if not isinstance(retrieval_profile, dict):
+            raise ValueError("Experiment variant `retrieval_profile` must be a JSON object.")
+        variants.append(
+            ExperimentVariantConfig(
+                name=str(item.get("name", "")),
+                traffic_weight=int(item.get("traffic_weight", ExperimentVariantConfig.traffic_weight)),
+                retrieval_profile=dict(retrieval_profile),
+            )
+        )
+    return tuple(variants)

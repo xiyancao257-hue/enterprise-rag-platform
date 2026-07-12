@@ -114,5 +114,27 @@
     "prefix": "enterprise-rag-prod",
     "query_ttl_seconds": 300,
     "embedding_ttl_seconds": 86400
+  },
+  "experiments": {
+    "enabled": false,
+    "name": "retrieval_profile",
+    "variants": [
+      {
+        "name": "baseline",
+        "traffic_weight": 50,
+        "retrieval_profile": {
+          "top_k": 6,
+          "enable_graph": true
+        }
+      },
+      {
+        "name": "higher_recall",
+        "traffic_weight": 50,
+        "retrieval_profile": {
+          "top_k": 10,
+          "enable_graph": true
+        }
+      }
+    ]
   }
 }

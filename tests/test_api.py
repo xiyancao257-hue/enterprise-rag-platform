@@ -9,6 +9,8 @@ from enterprise_rag.config import (
     ApiKeyCredential,
     ApiSecurityConfig,
     AppConfig,
+    ExperimentConfig,
+    ExperimentVariantConfig,
     GuardrailsConfig,
     IngestionConfig,
     LLMConfig,
@@ -398,6 +400,67 @@ def test_query_response_includes_experiment_headers(tmp_path) -> None:
         "variant": "graph_candidate",
         "assignment_key": "acme:user-1:hybrid retrieval",
     }
+
+
+def test_query_auto_assigns_experiment_from_config(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    config = AppConfig(
+        experiments=ExperimentConfig(
+            enabled=True,
+            name="retrieval_profile",
+            variants=(ExperimentVariantConfig(name="baseline", traffic_weight=1, retrieval_profile={"top_k": 5}),),
+        )
+    )
+    client = TestClient(create_app(index_path=index_path, config=config))
+
+    response = client.post("/query", json={"query": "Hybrid   Retrieval", "top_k": 1})
+
+    assert response.status_code == 200
+    assert response.json()["experiment"] == {
+        "name": "retrieval_profile",
+        "variant": "baseline",
+        "assignment_key": "public:anonymous:hybrid retrieval",
+    }
+
+
+def test_query_experiment_headers_override_config_assignment(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    config = AppConfig(
+        experiments=ExperimentConfig(
+            enabled=True,
+            name="retrieval_profile",
+            variants=(ExperimentVariantConfig(name="baseline", traffic_weight=1),),
+        )
+    )
+    client = TestClient(create_app(index_path=index_path, config=config))
+
+    response = client.post(
+        "/query",
+        headers={"X-Experiment-Name": "manual_exp", "X-Experiment-Variant": "forced_variant"},
+        json={"query": "hybrid retrieval", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["experiment"]["name"] == "manual_exp"
+    assert response.json()["experiment"]["variant"] == "forced_variant"
 
 
 def test_query_cache_is_experiment_variant_scoped(tmp_path) -> None:
