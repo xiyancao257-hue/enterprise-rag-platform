@@ -126,6 +126,39 @@ def test_query_returns_answer_plan_citations_and_request_id(tmp_path, caplog) ->
     }.items() <= query_completed.items()
 
 
+def test_query_stream_returns_ndjson_events(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.post(
+        "/query/stream",
+        headers={REQUEST_ID_HEADER: "req_stream_123"},
+        json={"query": "hybrid retrieval", "top_k": 1, "include_trace": True},
+    )
+    events = [json.loads(line) for line in response.text.splitlines()]
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.headers[REQUEST_ID_HEADER] == "req_stream_123"
+    assert events[0]["event"] == "metadata"
+    assert events[0]["request_id"] == "req_stream_123"
+    assert any(event["event"] == "answer_delta" and "Grounded " in event["text"] for event in events)
+    citation_event = next(event for event in events if event["event"] == "citations")
+    trace_event = next(event for event in events if event["event"] == "trace")
+    assert citation_event["citations"][0]["chunk_id"] == "hybrid"
+    assert trace_event["trace"]["retrieved"][0]["chunk_id"] == "hybrid"
+    assert events[-1] == {"event": "done"}
+
+
 def test_query_completed_writes_audit_event(tmp_path) -> None:
     index_path = tmp_path / "chunks.json"
     audit_path = tmp_path / "audit.jsonl"

@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from hashlib import sha256
 from hmac import compare_digest
@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from enterprise_rag.cache.factory import create_cache
@@ -660,6 +660,11 @@ def create_app(
         )
         return response
 
+    @app.post("/query/stream")
+    def query_stream(payload: QueryRequest, request: Request) -> StreamingResponse:
+        response = query(payload, request)
+        return StreamingResponse(_stream_query_response(response), media_type="application/x-ndjson")
+
     @app.post("/ingest-jobs", response_model=IngestJobResponse, status_code=202)
     def create_ingest_job(
         payload: IngestJobRequest,
@@ -810,6 +815,30 @@ def _query_response(
         guardrails=_guardrail_response(guardrails),
         trace=_trace_response(trace) if trace is not None else None,
     )
+
+
+def _stream_query_response(response: QueryResponse) -> Iterable[str]:
+    yield _json_line(
+        {
+            "event": "metadata",
+            "request_id": response.request_id,
+            "tenant_id": response.tenant_id,
+            "index_version": response.index_version,
+            "latency_ms": response.latency_ms,
+            "cost": response.cost.model_dump(),
+            "guardrails": response.guardrails.model_dump(),
+        }
+    )
+    for token in response.answer.split():
+        yield _json_line({"event": "answer_delta", "text": f"{token} "})
+    yield _json_line({"event": "citations", "citations": [citation.model_dump() for citation in response.citations]})
+    if response.trace is not None:
+        yield _json_line({"event": "trace", "trace": response.trace.model_dump()})
+    yield _json_line({"event": "done"})
+
+
+def _json_line(payload: dict[str, object]) -> str:
+    return json.dumps(payload, sort_keys=True) + "\n"
 
 
 def _cost_response(cost: object | None) -> CostResponse:
