@@ -224,6 +224,7 @@ Initial metrics:
 rag_queries_total
 rag_query_latency_seconds
 rag_retrieval_hits_total
+rag_provider_latency_ms{component,provider}
 rag_insufficient_evidence_total
 rag_eval_recall_at_k
 rag_eval_precision_at_k
@@ -251,6 +252,9 @@ monitoring/prometheus.yml
 monitoring/alerts.yml
 docker-compose.prod.yml
 ```
+
+The API also exports provider-level latency and call counters. These help separate slow embedding calls,
+vector database searches, and LLM generation from the broader query pipeline timing.
 
 ## 7. CI/CD
 

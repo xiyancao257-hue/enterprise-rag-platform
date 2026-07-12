@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config, load_config_from_env
+from enterprise_rag.embeddings.base import EmbeddingModel
 from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.evaluation.ab_testing import ExperimentAssigner, ExperimentVariant, assignment_key
 from enterprise_rag.evaluation.readiness import ReadinessReport, build_readiness_report
@@ -32,12 +33,13 @@ from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAudi
 from enterprise_rag.observability.costs import LLMCostEstimator
 from enterprise_rag.observability.feedback import FeedbackRecord, JsonFeedbackStore
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
-from enterprise_rag.rag.answer_generation import LLMAnswerGenerator
+from enterprise_rag.rag.answer_generation import AnswerGenerator, DeterministicAnswerGenerator, LLMAnswerGenerator
 from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
 from enterprise_rag.storage.index_version import IndexVersion, JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
+from enterprise_rag.vector_index.base import VectorIndex, VectorSearchResult
 from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
@@ -51,6 +53,10 @@ EXPERIMENT_KEY_HEADER = "X-Experiment-Key"
 logger = logging.getLogger("enterprise_rag.api")
 
 
+def _elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 4)
+
+
 @dataclass(frozen=True)
 class AuthContext:
     matched_credential: ApiKeyCredential | None = None
@@ -60,6 +66,59 @@ class AuthContext:
 class RateLimitDecision:
     allowed: bool
     retry_after_seconds: int = 0
+
+
+class ObservedEmbeddingModel:
+    def __init__(self, inner: EmbeddingModel, metrics: MetricsCollector, provider: str) -> None:
+        self.inner = inner
+        self.metrics = metrics
+        self.provider = provider
+
+    def embed(self, text: str) -> list[float]:
+        started_at = time.perf_counter()
+        try:
+            return self.inner.embed(text)
+        finally:
+            self.metrics.record_provider_latency("embedding", self.provider, _elapsed_ms(started_at))
+
+
+class ObservedVectorIndex:
+    def __init__(self, inner: VectorIndex, metrics: MetricsCollector, provider: str) -> None:
+        self.inner = inner
+        self.metrics = metrics
+        self.provider = provider
+
+    def add(self, id: str, vector: list[float], metadata: dict[str, str] | None = None) -> None:
+        self.inner.add(id, vector, metadata=metadata)
+
+    def delete(self, ids: list[str]) -> None:
+        self.inner.delete(ids)
+
+    def search(
+        self,
+        query_vector: list[float],
+        top_k: int = 10,
+        metadata_filters: dict[str, str] | None = None,
+    ) -> list[VectorSearchResult]:
+        started_at = time.perf_counter()
+        try:
+            return self.inner.search(query_vector, top_k=top_k, metadata_filters=metadata_filters)
+        finally:
+            self.metrics.record_provider_latency("vector_search", self.provider, _elapsed_ms(started_at))
+
+
+class ObservedAnswerGenerator:
+    def __init__(self, inner: AnswerGenerator, metrics: MetricsCollector, provider: str) -> None:
+        self.inner = inner
+        self.metrics = metrics
+        self.provider = provider
+
+    def generate(self, query: str, hits: list[SearchHit]) -> str:
+        started_at = time.perf_counter()
+        try:
+            return self.inner.generate(query, hits)
+        finally:
+            self.metrics.record_provider_latency("llm_generation", self.provider, _elapsed_ms(started_at))
 
 
 class FixedWindowRateLimiter:
@@ -96,10 +155,14 @@ class MetricsCollector:
         self.query_estimated_input_tokens_total = 0
         self.query_estimated_output_tokens_total = 0
         self.query_estimated_cost_usd_sum = 0.0
+        self.query_estimated_input_cost_usd_sum = 0.0
+        self.query_estimated_output_cost_usd_sum = 0.0
         self.query_cache_hits_total = 0
         self.query_cache_misses_total = 0
         self.query_stage_latency_ms_sum: dict[str, float] = {}
         self.query_stage_latency_ms_count: dict[str, int] = {}
+        self.provider_latency_ms_sum: dict[tuple[str, str], float] = {}
+        self.provider_latency_ms_count: dict[tuple[str, str], int] = {}
         self.ingest_jobs_total = 0
         self.ingest_job_success_total = 0
         self.ingest_job_failures_total = 0
@@ -121,10 +184,19 @@ class MetricsCollector:
         self.query_latency_ms_count += 1
         self.query_citations_total += citation_count
 
-    def record_query_cost(self, input_tokens: int, output_tokens: int, estimated_cost_usd: float) -> None:
+    def record_query_cost(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost_usd: float,
+        input_cost_usd: float = 0.0,
+        output_cost_usd: float = 0.0,
+    ) -> None:
         self.query_estimated_input_tokens_total += input_tokens
         self.query_estimated_output_tokens_total += output_tokens
         self.query_estimated_cost_usd_sum += estimated_cost_usd
+        self.query_estimated_input_cost_usd_sum += input_cost_usd
+        self.query_estimated_output_cost_usd_sum += output_cost_usd
 
     def record_query_failure(self) -> None:
         self.query_requests_total += 1
@@ -140,6 +212,11 @@ class MetricsCollector:
         for stage, latency_ms in timings_ms.items():
             self.query_stage_latency_ms_sum[stage] = self.query_stage_latency_ms_sum.get(stage, 0.0) + latency_ms
             self.query_stage_latency_ms_count[stage] = self.query_stage_latency_ms_count.get(stage, 0) + 1
+
+    def record_provider_latency(self, component: str, provider: str, latency_ms: float) -> None:
+        key = (_metric_suffix(component), _metric_suffix(provider))
+        self.provider_latency_ms_sum[key] = self.provider_latency_ms_sum.get(key, 0.0) + latency_ms
+        self.provider_latency_ms_count[key] = self.provider_latency_ms_count.get(key, 0) + 1
 
     def record_ingest_job_created(self) -> None:
         self.ingest_jobs_total += 1
@@ -179,6 +256,8 @@ class MetricsCollector:
             "enterprise_rag_query_estimated_input_tokens_total": self.query_estimated_input_tokens_total,
             "enterprise_rag_query_estimated_output_tokens_total": self.query_estimated_output_tokens_total,
             "enterprise_rag_query_estimated_cost_usd_sum": round(self.query_estimated_cost_usd_sum, 8),
+            "enterprise_rag_query_estimated_input_cost_usd_sum": round(self.query_estimated_input_cost_usd_sum, 8),
+            "enterprise_rag_query_estimated_output_cost_usd_sum": round(self.query_estimated_output_cost_usd_sum, 8),
             "enterprise_rag_query_cache_hits_total": self.query_cache_hits_total,
             "enterprise_rag_query_cache_misses_total": self.query_cache_misses_total,
             "enterprise_rag_ingest_jobs_total": self.ingest_jobs_total,
@@ -198,7 +277,14 @@ class MetricsCollector:
             suffix = _metric_suffix(stage)
             metrics[f"enterprise_rag_query_stage_{suffix}_latency_ms_sum"] = round(latency_sum, 4)
             metrics[f"enterprise_rag_query_stage_{suffix}_latency_ms_count"] = self.query_stage_latency_ms_count[stage]
-        return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
+        lines = [f"{name} {value}" for name, value in metrics.items()]
+        for (component, provider), latency_sum in sorted(self.provider_latency_ms_sum.items()):
+            labels = f'{{component="{component}",provider="{provider}"}}'
+            count = self.provider_latency_ms_count[(component, provider)]
+            lines.append(f"enterprise_rag_provider_latency_ms_sum{labels} {round(latency_sum, 4)}")
+            lines.append(f"enterprise_rag_provider_latency_ms_count{labels} {count}")
+            lines.append(f"enterprise_rag_provider_calls_total{labels} {count}")
+        return "\n".join(lines) + "\n"
 
 
 class QueryRequest(BaseModel):
@@ -696,15 +782,28 @@ def create_app(
                 }
             )
         app.state.metrics.record_query_cache_miss()
+        answer_generator = ObservedAnswerGenerator(
+            _answer_generator_for_config(config) or DeterministicAnswerGenerator(),
+            metrics=app.state.metrics,
+            provider=config.llm.provider,
+        )
         pipeline = RagPipeline(
             chunks,
             enable_graph=runtime.enable_graph,
             graph_max_hops=runtime.graph_max_hops,
-            vector_index=create_vector_index(config.vector_index),
-            embedding_model=create_embedding_model(config.embedding),
+            vector_index=ObservedVectorIndex(
+                create_vector_index(config.vector_index),
+                metrics=app.state.metrics,
+                provider=config.vector_index.provider,
+            ),
+            embedding_model=ObservedEmbeddingModel(
+                create_embedding_model(config.embedding),
+                metrics=app.state.metrics,
+                provider=config.embedding.provider,
+            ),
             embedding_cache=app.state.embedding_cache,
             embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
-            answer_generator=_answer_generator_for_config(config),
+            answer_generator=answer_generator,
         )
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,
@@ -723,6 +822,8 @@ def create_app(
             input_tokens=cost.input_tokens,
             output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
+            input_cost_usd=_input_cost_usd(config, cost.input_tokens),
+            output_cost_usd=_output_cost_usd(config, cost.output_tokens),
         )
         guardrails = QueryGuardrailPolicy(config.guardrails).evaluate(
             payload.query,
@@ -1291,6 +1392,14 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
 def _cost_prompt_approximation(query: str, citations: tuple[SearchHit, ...]) -> str:
     evidence = "\n".join(hit.chunk.text for hit in citations)
     return f"{query}\n{evidence}"
+
+
+def _input_cost_usd(config: AppConfig, input_tokens: int) -> float:
+    return round(input_tokens / 1000 * config.llm.input_cost_per_1k_tokens, 8)
+
+
+def _output_cost_usd(config: AppConfig, output_tokens: int) -> float:
+    return round(output_tokens / 1000 * config.llm.output_cost_per_1k_tokens, 8)
 
 
 def _validate_ingest_source_path(source_path: Path, config: AppConfig) -> Path:

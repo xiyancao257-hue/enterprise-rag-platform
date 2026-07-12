@@ -200,6 +200,11 @@ Useful production RAG metrics include:
 - `enterprise_rag_query_failures_total`
 - `enterprise_rag_query_cache_hits_total` and `enterprise_rag_query_cache_misses_total`
 - `enterprise_rag_query_estimated_cost_usd_sum`
+- `enterprise_rag_query_estimated_input_cost_usd_sum`
+- `enterprise_rag_query_estimated_output_cost_usd_sum`
+- `enterprise_rag_provider_latency_ms_sum{component="embedding",provider="hashing"}`
+- `enterprise_rag_provider_latency_ms_sum{component="vector_search",provider="memory"}`
+- `enterprise_rag_provider_latency_ms_sum{component="llm_generation",provider="stub"}`
 - `enterprise_rag_ingest_job_failures_total`
 - `enterprise_rag_feedback_total`
 

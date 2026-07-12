@@ -706,6 +706,8 @@ def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
     assert "enterprise_rag_query_estimated_input_tokens_total" in metrics
     assert "enterprise_rag_query_estimated_output_tokens_total" in metrics
     assert "enterprise_rag_query_estimated_cost_usd_sum" in metrics
+    assert "enterprise_rag_query_estimated_input_cost_usd_sum" in metrics
+    assert "enterprise_rag_query_estimated_output_cost_usd_sum" in metrics
     assert "enterprise_rag_query_cache_hits_total 0" in metrics
     assert "enterprise_rag_query_cache_misses_total 1" in metrics
     assert "enterprise_rag_query_stage_query_planning_latency_ms_count 1" in metrics
@@ -713,6 +715,10 @@ def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
     assert "enterprise_rag_query_stage_rerank_latency_ms_count 1" in metrics
     assert "enterprise_rag_query_stage_compression_latency_ms_count 1" in metrics
     assert "enterprise_rag_query_stage_generation_latency_ms_count 1" in metrics
+    assert 'enterprise_rag_provider_latency_ms_count{component="embedding",provider="hashing"}' in metrics
+    assert 'enterprise_rag_provider_calls_total{component="embedding",provider="hashing"}' in metrics
+    assert 'enterprise_rag_provider_latency_ms_count{component="vector_search",provider="memory"} 1' in metrics
+    assert 'enterprise_rag_provider_calls_total{component="llm_generation",provider="stub"} 1' in metrics
 
 
 def test_metrics_records_failed_query(tmp_path) -> None:
