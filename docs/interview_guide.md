@@ -26,7 +26,7 @@ The ingestion design treats data quality as part of retrieval quality. Instead o
 - creates chunks that preserve document structure
 - stores chunks as JSON for repeatable local demos
 
-The main tradeoff is simplicity versus document coverage. The current implementation focuses on Markdown and text files, but the architecture is ready for PDF, DOCX, OCR, table extraction, and multimodal blocks.
+The main tradeoff is simplicity versus document coverage. The current implementation supports Markdown, text, CSV tables, and text-based PDFs. Scanned PDFs, image OCR, DOCX, and multimodal extraction are clear adapter extensions.
 
 ## Query Planning Deep Dive
 
@@ -132,7 +132,7 @@ The project includes structure-aware ingestion, metadata filters, ACL-style filt
 
 ### Where would you improve it next?
 
-I would add production document loaders, real OCR, table extraction, a persistent vector database, a stronger embedding model, external reranker integration, model-assisted graph extraction, and a reviewer UI for the self-healing loop.
+I would add real OCR, DOCX/PPTX loaders, Excel multi-sheet extraction, a persistent vector database, a stronger embedding model, external reranker integration, model-assisted graph extraction, and a reviewer UI for the self-healing loop.
 
 ## STAR Story
 

@@ -20,8 +20,9 @@ enterprise-rag ingest data/raw
 enterprise-rag query "What does AUTH-429 affect?" --enable-graph --trace
 ```
 
-Add `.txt` or `.md` files into `data/raw` before running ingestion.
-CSV files are also supported and are converted into table-aware chunks.
+Add `.txt`, `.md`, `.csv`, or text-based `.pdf` files into `data/raw` before running ingestion.
+CSV files are converted into table-aware chunks. PDFs are supported when they contain selectable text;
+scanned PDFs still need an OCR adapter.
 
 ## CLI Demo
 
@@ -203,8 +204,9 @@ Query Logs
 
 Ingestion:
 
-- `ingestion/loaders.py` loads local `.txt` and `.md` documents.
+- `ingestion/loaders.py` loads local `.txt`, `.md`, `.csv`, and text-based `.pdf` documents.
 - `.csv` files are converted into Markdown-style tables before parsing.
+- `.pdf` files use text extraction and preserve page markers before parsing.
 - `processing/cleaning.py` filters low-quality or duplicated text.
 - `processing/parser.py` preserves headings, paragraphs, and tables as document blocks.
 - `processing/chunking.py` creates structure-aware chunks with source metadata.

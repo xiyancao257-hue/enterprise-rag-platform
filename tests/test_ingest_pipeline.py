@@ -49,6 +49,24 @@ def test_load_documents_converts_csv_to_markdown_table(tmp_path: Path) -> None:
     assert "| Auth Service | AUTH-429 | high |" in documents[0].text
 
 
+def test_load_documents_extracts_text_from_pdf(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    pdf_file = raw_dir / "guide.pdf"
+    _write_minimal_pdf(pdf_file, "Hybrid PDF retrieval notes")
+
+    documents = load_documents(raw_dir)
+
+    assert len(documents) == 1
+    assert documents[0].metadata["extension"] == ".pdf"
+    assert documents[0].metadata["source_format"] == "pdf"
+    assert documents[0].metadata["pdf_page_count"] == "1"
+    assert documents[0].metadata["pdf_pages_with_text"] == "1"
+    assert "# Guide" in documents[0].text
+    assert "## Page 1" in documents[0].text
+    assert "Hybrid PDF retrieval notes" in documents[0].text
+
+
 def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -446,3 +464,43 @@ def test_incremental_ingest_redacts_sensitive_values_in_chunks(tmp_path: Path) -
     assert "[REDACTED_EMAIL]" in chunks[0].text
     assert chunks[0].metadata["redacted"] == "true"
     assert "api_token" in chunks[0].metadata["redaction_types"]
+
+
+def _write_minimal_pdf(path: Path, text: str) -> None:
+    content = f"BT /F1 12 Tf 72 120 Td ({_escape_pdf_text(text)}) Tj ET"
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] "
+        "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Length {len(content.encode('latin-1'))} >>\nstream\n{content}\nendstream",
+    ]
+    parts = ["%PDF-1.4\n"]
+    offsets = [0]
+    current_offset = len(parts[0].encode("latin-1"))
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(current_offset)
+        rendered = f"{index} 0 obj\n{obj}\nendobj\n"
+        parts.append(rendered)
+        current_offset += len(rendered.encode("latin-1"))
+
+    xref_offset = current_offset
+    xref_entries = ["0000000000 65535 f \n", *(f"{offset:010d} 00000 n \n" for offset in offsets[1:])]
+    parts.extend(
+        [
+            "xref\n",
+            f"0 {len(objects) + 1}\n",
+            *xref_entries,
+            "trailer\n",
+            f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n",
+            "startxref\n",
+            f"{xref_offset}\n",
+            "%%EOF\n",
+        ]
+    )
+    path.write_bytes("".join(parts).encode("latin-1"))
+
+
+def _escape_pdf_text(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

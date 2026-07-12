@@ -9,6 +9,7 @@ description = "Enterprise-style RAG pipeline with structured ingestion, hybrid r
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
+    "pypdf>=5",
     "uvicorn[standard]>=0.30",
 ]
 

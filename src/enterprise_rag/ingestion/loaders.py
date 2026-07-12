@@ -10,6 +10,7 @@ from enterprise_rag.models import Document
 from enterprise_rag.text import normalize_text
 
 FILTER_EMPTY_TEXT = "empty_text"
+FILTER_TEXT_EXTRACTION_FAILED = "text_extraction_failed"
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,12 @@ def load_documents_with_report(
             _count_filter_reason(filter_reasons, rejection_reason)
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=rejection_reason))
             continue
-        raw_text = _read_file_text(file)
+        try:
+            raw_text, loader_metadata = _read_file(file)
+        except Exception:
+            _count_filter_reason(filter_reasons, FILTER_TEXT_EXTRACTION_FAILED)
+            filtered_documents.append(FilteredDocument(source_path=str(file), reason=FILTER_TEXT_EXTRACTION_FAILED))
+            continue
         text = normalize_text(raw_text)
         if not text:
             _count_filter_reason(filter_reasons, FILTER_EMPTY_TEXT)
@@ -66,7 +72,7 @@ def load_documents_with_report(
                     "extension": file.suffix.lower(),
                     "filename": file.name,
                     "content_hash": content_hash,
-                    **_loader_metadata(file),
+                    **loader_metadata,
                 },
             )
         )
@@ -82,10 +88,12 @@ def _count_filter_reason(filter_reasons: dict[str, int], reason: str) -> None:
     filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
 
 
-def _read_file_text(file: Path) -> str:
+def _read_file(file: Path) -> tuple[str, dict[str, str]]:
     if file.suffix.lower() == ".csv":
-        return _csv_to_markdown_table(file)
-    return file.read_text(encoding="utf-8", errors="ignore")
+        return _csv_to_markdown_table(file), {"source_format": "csv", "table_format": "markdown"}
+    if file.suffix.lower() == ".pdf":
+        return _pdf_to_text(file)
+    return file.read_text(encoding="utf-8", errors="ignore"), {}
 
 
 def _csv_to_markdown_table(file: Path) -> str:
@@ -116,7 +124,21 @@ def _markdown_row(cells: list[str]) -> str:
     return "| " + " | ".join(escaped) + " |"
 
 
-def _loader_metadata(file: Path) -> dict[str, str]:
-    if file.suffix.lower() == ".csv":
-        return {"source_format": "csv", "table_format": "markdown"}
-    return {}
+def _pdf_to_text(file: Path) -> tuple[str, dict[str, str]]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(file))
+    title = file.stem.replace("_", " ").replace("-", " ").title()
+    parts = [f"# {title}"]
+    pages_with_text = 0
+    for page_number, page in enumerate(reader.pages, start=1):
+        page_text = normalize_text(page.extract_text() or "")
+        if not page_text:
+            continue
+        pages_with_text += 1
+        parts.extend(["", f"## Page {page_number}", "", page_text])
+    return "\n".join(parts), {
+        "source_format": "pdf",
+        "pdf_page_count": str(len(reader.pages)),
+        "pdf_pages_with_text": str(pages_with_text),
+    }

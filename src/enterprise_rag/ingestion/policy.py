@@ -11,7 +11,7 @@ FILTER_FILE_TOO_LARGE = "file_too_large"
 
 @dataclass(frozen=True)
 class IngestionFilePolicy:
-    allowed_extensions: tuple[str, ...] = (".txt", ".md", ".csv")
+    allowed_extensions: tuple[str, ...] = (".txt", ".md", ".csv", ".pdf")
     max_file_bytes: int = 10_000_000
 
     @classmethod

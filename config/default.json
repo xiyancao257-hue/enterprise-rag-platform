@@ -27,7 +27,7 @@
   },
   "ingestion": {
     "allowed_source_roots": [],
-    "allowed_extensions": [".txt", ".md", ".csv"],
+    "allowed_extensions": [".txt", ".md", ".csv", ".pdf"],
     "max_file_bytes": 10000000
   },
   "chunking": {
@@ -47,6 +47,10 @@
       ".csv": {
         "target_tokens": 120,
         "max_tokens": 240
+      },
+      ".pdf": {
+        "target_tokens": 220,
+        "max_tokens": 360
       }
     }
   },
