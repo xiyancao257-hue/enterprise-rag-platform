@@ -29,6 +29,26 @@ def test_load_documents_reads_supported_files(tmp_path: Path) -> None:
     assert documents[0].metadata["content_hash"]
 
 
+def test_load_documents_converts_csv_to_markdown_table(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    csv_file = raw_dir / "incidents.csv"
+    csv_file.write_text(
+        "service,incident,severity\nAuth Service,AUTH-429,high\nBilling,BILL-204,medium\n",
+        encoding="utf-8",
+    )
+
+    documents = load_documents(raw_dir)
+
+    assert len(documents) == 1
+    assert documents[0].metadata["extension"] == ".csv"
+    assert documents[0].metadata["source_format"] == "csv"
+    assert documents[0].metadata["table_format"] == "markdown"
+    assert "# Incidents" in documents[0].text
+    assert "| service | incident | severity |" in documents[0].text
+    assert "| Auth Service | AUTH-429 | high |" in documents[0].text
+
+
 def test_load_documents_report_counts_policy_filtered_files(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -130,6 +150,26 @@ def test_incremental_ingest_uses_chunking_config_by_extension(tmp_path: Path) ->
     assert chunks_by_extension[".md"].metadata["chunk_max_tokens"] == "40"
     assert chunks_by_extension[".txt"].metadata["chunk_target_tokens"] == "10"
     assert chunks_by_extension[".txt"].metadata["chunk_max_tokens"] == "20"
+
+
+def test_incremental_ingest_preserves_csv_as_table_chunk(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("incidents.csv").write_text(
+        "service,incident,severity\nAuth Service,AUTH-429,high\nBilling,BILL-204,medium\n",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+
+    report = IncrementalIngestPipeline().run(raw_dir, store)
+
+    chunks = store.load()
+    assert report.documents_new == 1
+    assert len(chunks) == 1
+    assert chunks[0].metadata["extension"] == ".csv"
+    assert chunks[0].metadata["source_format"] == "csv"
+    assert "| Auth Service | AUTH-429 | high |" in chunks[0].text
+    assert chunks[0].metadata["chunking_strategy"] == "structure_aware"
 
 
 def test_incremental_ingest_reprocesses_when_chunking_config_changes(tmp_path: Path) -> None:

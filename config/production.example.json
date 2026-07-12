@@ -32,7 +32,7 @@
   },
   "ingestion": {
     "allowed_source_roots": ["data/raw", "/mnt/enterprise-rag/sources"],
-    "allowed_extensions": [".txt", ".md"],
+    "allowed_extensions": [".txt", ".md", ".csv"],
     "max_file_bytes": 10000000
   },
   "chunking": {
@@ -48,6 +48,10 @@
       ".txt": {
         "target_tokens": 180,
         "max_tokens": 300
+      },
+      ".csv": {
+        "target_tokens": 120,
+        "max_tokens": 240
       }
     }
   },

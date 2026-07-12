@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +49,7 @@ def load_documents_with_report(
             _count_filter_reason(filter_reasons, rejection_reason)
             filtered_documents.append(FilteredDocument(source_path=str(file), reason=rejection_reason))
             continue
-        raw_text = file.read_text(encoding="utf-8", errors="ignore")
+        raw_text = _read_file_text(file)
         text = normalize_text(raw_text)
         if not text:
             _count_filter_reason(filter_reasons, FILTER_EMPTY_TEXT)
@@ -61,7 +62,12 @@ def load_documents_with_report(
                 id=doc_id,
                 source_path=str(file),
                 text=text,
-                metadata={"extension": file.suffix.lower(), "filename": file.name, "content_hash": content_hash},
+                metadata={
+                    "extension": file.suffix.lower(),
+                    "filename": file.name,
+                    "content_hash": content_hash,
+                    **_loader_metadata(file),
+                },
             )
         )
     return LoadDocumentsResult(
@@ -74,3 +80,43 @@ def load_documents_with_report(
 
 def _count_filter_reason(filter_reasons: dict[str, int], reason: str) -> None:
     filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
+
+
+def _read_file_text(file: Path) -> str:
+    if file.suffix.lower() == ".csv":
+        return _csv_to_markdown_table(file)
+    return file.read_text(encoding="utf-8", errors="ignore")
+
+
+def _csv_to_markdown_table(file: Path) -> str:
+    rows = []
+    with file.open(newline="", encoding="utf-8", errors="ignore") as handle:
+        for row in csv.reader(handle):
+            cleaned = [cell.strip().replace("\n", " ") for cell in row]
+            if any(cleaned):
+                rows.append(cleaned)
+    if not rows:
+        return ""
+
+    width = max(len(row) for row in rows)
+    padded = [row + [""] * (width - len(row)) for row in rows]
+    header = padded[0]
+    body = padded[1:]
+    table_lines = [
+        _markdown_row(header),
+        _markdown_row(["---"] * width),
+        *(_markdown_row(row) for row in body),
+    ]
+    title = file.stem.replace("_", " ").replace("-", " ").title()
+    return "\n".join([f"# {title}", "", *table_lines])
+
+
+def _markdown_row(cells: list[str]) -> str:
+    escaped = [cell.replace("|", "\\|") for cell in cells]
+    return "| " + " | ".join(escaped) + " |"
+
+
+def _loader_metadata(file: Path) -> dict[str, str]:
+    if file.suffix.lower() == ".csv":
+        return {"source_format": "csv", "table_format": "markdown"}
+    return {}

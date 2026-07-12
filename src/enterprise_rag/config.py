@@ -52,7 +52,7 @@ class JobsConfig:
 @dataclass(frozen=True)
 class IngestionConfig:
     allowed_source_roots: tuple[str, ...] = ()
-    allowed_extensions: tuple[str, ...] = (".txt", ".md")
+    allowed_extensions: tuple[str, ...] = (".txt", ".md", ".csv")
     max_file_bytes: int = 10_000_000
 
 
