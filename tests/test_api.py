@@ -14,6 +14,7 @@ from enterprise_rag.config import (
     GuardrailsConfig,
     IngestionConfig,
     LLMConfig,
+    RetrievalConfig,
 )
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
@@ -399,6 +400,7 @@ def test_query_response_includes_experiment_headers(tmp_path) -> None:
         "name": "retrieval_profile",
         "variant": "graph_candidate",
         "assignment_key": "acme:user-1:hybrid retrieval",
+        "retrieval_profile": {},
     }
 
 
@@ -429,7 +431,35 @@ def test_query_auto_assigns_experiment_from_config(tmp_path) -> None:
         "name": "retrieval_profile",
         "variant": "baseline",
         "assignment_key": "public:anonymous:hybrid retrieval",
+        "retrieval_profile": {"top_k": 5},
     }
+
+
+def test_query_applies_experiment_retrieval_profile_top_k(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(id="hybrid_1", document_id="doc1", text="Hybrid retrieval combines BM25 with vector search."),
+            Chunk(id="hybrid_2", document_id="doc2", text="Hybrid retrieval can improve recall for enterprise RAG."),
+            Chunk(id="unrelated", document_id="doc3", text="Unrelated release notes."),
+        ]
+    )
+    config = AppConfig(
+        retrieval=RetrievalConfig(top_k=1),
+        experiments=ExperimentConfig(
+            enabled=True,
+            name="retrieval_profile",
+            variants=(ExperimentVariantConfig(name="higher_recall", traffic_weight=1, retrieval_profile={"top_k": 2}),),
+        ),
+    )
+    client = TestClient(create_app(index_path=index_path, config=config))
+
+    response = client.post("/query", json={"query": "hybrid retrieval"})
+
+    assert response.status_code == 200
+    assert response.json()["experiment"]["variant"] == "higher_recall"
+    assert response.json()["experiment"]["retrieval_profile"] == {"top_k": 2}
+    assert len(response.json()["citations"]) == 2
 
 
 def test_query_experiment_headers_override_config_assignment(tmp_path) -> None:

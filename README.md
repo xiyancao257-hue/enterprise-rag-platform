@@ -208,6 +208,7 @@ curl -X POST http://localhost:8000/query \
 
 You can also enable config-driven experiment assignment. In that mode, headers still override the config,
 but ordinary requests are deterministically assigned to a configured variant by tenant and normalized query.
+The assigned variant can apply a retrieval profile such as `top_k`, `enable_graph`, and `graph_max_hops`.
 See `config/production.example.json` for a disabled-by-default `experiments` section.
 
 ## Current Architecture

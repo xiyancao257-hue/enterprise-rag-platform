@@ -272,6 +272,7 @@ class ExperimentResponse(BaseModel):
     name: str
     variant: str
     assignment_key: str | None = None
+    retrieval_profile: dict[str, object] = Field(default_factory=dict)
 
 
 class QueryResponse(BaseModel):
@@ -286,6 +287,13 @@ class QueryResponse(BaseModel):
     cost: CostResponse = Field(default_factory=CostResponse)
     guardrails: QueryGuardrailResponse = Field(default_factory=QueryGuardrailResponse)
     trace: QueryTraceResponse | None = None
+
+
+@dataclass(frozen=True)
+class QueryRuntimeSettings:
+    top_k: int
+    enable_graph: bool
+    graph_max_hops: int
 
 
 class FeedbackRequest(BaseModel):
@@ -653,20 +661,20 @@ def create_app(
             raise HTTPException(status_code=404, detail="No chunks found. Run ingestion before querying.")
 
         config: AppConfig = app.state.config
-        top_k = payload.top_k if payload.top_k is not None else config.retrieval.top_k
+        experiment = _experiment_response(request, config, tenant_id, payload.query)
+        runtime = _query_runtime_settings(payload, config, experiment)
         user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
         mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
         index_version = app.state.index_version_store.current_id(app.state.index_path)
-        experiment = _experiment_response(request, config, tenant_id, payload.query)
         query_cache_key = build_query_cache_key(
             query=payload.query,
             tenant_id=tenant_id,
             user_groups=user_groups,
             metadata_filters=mandatory_metadata_filters,
-            top_k=top_k,
+            top_k=runtime.top_k,
             index_path=app.state.index_path,
             index_version_id=index_version,
-            retrieval_profile=_query_cache_retrieval_profile(config, experiment),
+            retrieval_profile=_query_cache_retrieval_profile(config, runtime, experiment),
         )
         cached_response = app.state.query_cache.get(query_cache_key)
         if isinstance(cached_response, dict):
@@ -675,7 +683,7 @@ def create_app(
                 "query_cache_hit",
                 request_id=request.state.request_id,
                 tenant_id=tenant_id,
-                top_k=top_k,
+                top_k=runtime.top_k,
                 index_version=index_version,
             )
             return QueryResponse.model_validate(
@@ -690,8 +698,8 @@ def create_app(
         app.state.metrics.record_query_cache_miss()
         pipeline = RagPipeline(
             chunks,
-            enable_graph=config.retrieval.enable_graph,
-            graph_max_hops=config.retrieval.graph_max_hops,
+            enable_graph=runtime.enable_graph,
+            graph_max_hops=runtime.graph_max_hops,
             vector_index=create_vector_index(config.vector_index),
             embedding_model=create_embedding_model(config.embedding),
             embedding_cache=app.state.embedding_cache,
@@ -700,7 +708,7 @@ def create_app(
         )
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,
-            top_k=top_k,
+            top_k=runtime.top_k,
             user_groups=user_groups,
             mandatory_metadata_filters=mandatory_metadata_filters,
         )
@@ -726,7 +734,9 @@ def create_app(
             "query_completed",
             request_id=request.state.request_id,
             latency_ms=round(latency_ms, 2),
-            top_k=top_k,
+            top_k=runtime.top_k,
+            enable_graph=runtime.enable_graph,
+            graph_max_hops=runtime.graph_max_hops,
             citation_count=len(answer.citations),
             blocked_context_count=len(trace.blocked_context),
             include_trace=payload.include_trace,
@@ -748,7 +758,9 @@ def create_app(
                 tenant_id=tenant_id,
                 principal=_audit_principal(request, auth_context),
                 attributes={
-                    "top_k": top_k,
+                    "top_k": runtime.top_k,
+                    "enable_graph": runtime.enable_graph,
+                    "graph_max_hops": runtime.graph_max_hops,
                     "query_length": len(payload.query),
                     "citation_chunk_ids": [hit.chunk.id for hit in answer.citations],
                     "index_version": index_version,
@@ -1073,7 +1085,36 @@ def _experiment_response(
         name=assignment.experiment_name,
         variant=assignment.variant_name,
         assignment_key=assignment.assignment_key,
+        retrieval_profile=assignment.retrieval_profile,
     )
+
+
+def _query_runtime_settings(
+    payload: QueryRequest,
+    config: AppConfig,
+    experiment: ExperimentResponse | None,
+) -> QueryRuntimeSettings:
+    profile = experiment.retrieval_profile if experiment is not None else {}
+    top_k = payload.top_k if payload.top_k is not None else _profile_int(profile, "top_k", config.retrieval.top_k)
+    return QueryRuntimeSettings(
+        top_k=top_k,
+        enable_graph=_profile_bool(profile, "enable_graph", config.retrieval.enable_graph),
+        graph_max_hops=_profile_int(profile, "graph_max_hops", config.retrieval.graph_max_hops),
+    )
+
+
+def _profile_int(profile: dict[str, object], key: str, default: int) -> int:
+    value = profile.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HTTPException(status_code=500, detail=f"Experiment retrieval_profile `{key}` must be an integer.")
+    return value
+
+
+def _profile_bool(profile: dict[str, object], key: str, default: bool) -> bool:
+    value = profile.get(key, default)
+    if not isinstance(value, bool):
+        raise HTTPException(status_code=500, detail=f"Experiment retrieval_profile `{key}` must be a boolean.")
+    return value
 
 
 def _feedback_summary(records: list[FeedbackRecord]) -> FeedbackSummaryResponse:
@@ -1128,12 +1169,13 @@ def _readiness_response(request_id: str, report: ReadinessReport) -> ReadinessRe
 
 def _query_cache_retrieval_profile(
     config: AppConfig,
+    runtime: QueryRuntimeSettings,
     experiment: ExperimentResponse | None = None,
 ) -> dict[str, object]:
     profile: dict[str, object] = {
         "retrieval": {
-            "enable_graph": config.retrieval.enable_graph,
-            "graph_max_hops": config.retrieval.graph_max_hops,
+            "enable_graph": runtime.enable_graph,
+            "graph_max_hops": runtime.graph_max_hops,
         },
         "vector_index": {
             "provider": config.vector_index.provider,
