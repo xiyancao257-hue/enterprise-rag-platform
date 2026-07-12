@@ -198,6 +198,19 @@ Grafana starts on `http://localhost:3000` with a provisioned dashboard named **E
 For local demos the default login is `admin` / `admin`; set `GRAFANA_ADMIN_USER` and
 `GRAFANA_ADMIN_PASSWORD` in `.env` before using it beyond a local demo.
 
+Run a production smoke test against the deployed API:
+
+```bash
+uv run python scripts/smoke_test.py \
+  --base-url http://localhost:8000 \
+  --api-key "$ENTERPRISE_RAG_API_KEY" \
+  --tenant acme \
+  --query "What does AUTH-429 affect?" \
+  --output-json data/reports/smoke_test.json
+```
+
+For the full verification checklist, see [`docs/deployment_runbook.md`](docs/deployment_runbook.md).
+
 Useful production RAG metrics include:
 
 - `enterprise_rag_query_latency_ms_sum` / `enterprise_rag_query_latency_ms_count`

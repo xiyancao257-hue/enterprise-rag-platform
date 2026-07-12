@@ -251,6 +251,7 @@ Project files:
 monitoring/prometheus.yml
 monitoring/alerts.yml
 monitoring/grafana/dashboards/enterprise-rag.json
+docs/deployment_runbook.md
 docker-compose.prod.yml
 ```
 
