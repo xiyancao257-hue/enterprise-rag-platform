@@ -1,0 +1,482 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_query_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "avg query latency",
+          "refId": "A"
+        }
+      ],
+      "title": "Average Query Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_query_failures_total[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_requests_total[$__rate_interval]), 1)",
+          "legendFormat": "failure rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Query Failure Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_query_cache_hits_total[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_cache_hits_total[$__rate_interval]) + increase(enterprise_rag_query_cache_misses_total[$__rate_interval]), 1)",
+          "legendFormat": "cache hit rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Query Cache Hit Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_provider_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_provider_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "{{component}} / {{provider}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Provider Latency Breakdown",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_query_stage_query_planning_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_stage_query_planning_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "query planning",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_stage_retrieval_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_stage_retrieval_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "retrieval",
+          "refId": "B"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_stage_rerank_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_stage_rerank_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "rerank",
+          "refId": "C"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_stage_compression_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_stage_compression_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "compression",
+          "refId": "D"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_stage_generation_latency_ms_sum[$__rate_interval]) / clamp_min(increase(enterprise_rag_query_stage_generation_latency_ms_count[$__rate_interval]), 1)",
+          "legendFormat": "generation",
+          "refId": "E"
+        }
+      ],
+      "title": "Pipeline Stage Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_query_estimated_input_cost_usd_sum[$__rate_interval])",
+          "legendFormat": "input cost",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_estimated_output_cost_usd_sum[$__rate_interval])",
+          "legendFormat": "output cost",
+          "refId": "B"
+        },
+        {
+          "expr": "increase(enterprise_rag_query_estimated_cost_usd_sum[$__rate_interval])",
+          "legendFormat": "total cost",
+          "refId": "C"
+        }
+      ],
+      "title": "Estimated LLM Cost",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(enterprise_rag_ingest_job_success_total[$__rate_interval])",
+          "legendFormat": "success",
+          "refId": "A"
+        },
+        {
+          "expr": "increase(enterprise_rag_ingest_job_failures_total[$__rate_interval])",
+          "legendFormat": "failures",
+          "refId": "B"
+        },
+        {
+          "expr": "increase(enterprise_rag_ingest_job_retry_exhausted_total[$__rate_interval])",
+          "legendFormat": "retry exhausted",
+          "refId": "C"
+        }
+      ],
+      "title": "Ingest Jobs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 8,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "enterprise_rag_feedback_total",
+          "legendFormat": "feedback",
+          "refId": "A"
+        }
+      ],
+      "title": "Feedback Events",
+      "type": "stat"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "rag",
+    "enterprise",
+    "ai"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Enterprise RAG Operations",
+  "uid": "enterprise-rag-ops",
+  "version": 1,
+  "weekStart": ""
+}

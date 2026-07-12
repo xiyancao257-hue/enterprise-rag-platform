@@ -242,7 +242,7 @@ GET /metrics
 Implemented stack:
 
 ```text
-Prometheus -> Grafana -> alerts
+Prometheus -> Grafana dashboard -> alerts
 ```
 
 Project files:
@@ -250,6 +250,7 @@ Project files:
 ```text
 monitoring/prometheus.yml
 monitoring/alerts.yml
+monitoring/grafana/dashboards/enterprise-rag.json
 docker-compose.prod.yml
 ```
 

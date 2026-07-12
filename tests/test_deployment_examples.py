@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from enterprise_rag.config import load_config
@@ -43,9 +44,45 @@ def test_prod_compose_wires_prometheus_monitoring() -> None:
     assert "9090:9090" in content
 
 
+def test_prod_compose_wires_grafana_dashboard() -> None:
+    content = Path("docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert "grafana:" in content
+    assert "grafana/grafana" in content
+    assert "3000:3000" in content
+    assert "./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro" in content
+    assert "./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro" in content
+    assert "grafana_data:" in content
+
+
 def test_prometheus_alert_rules_cover_core_rag_failures() -> None:
     content = Path("monitoring/alerts.yml").read_text(encoding="utf-8")
 
     assert "EnterpriseRagQueryFailures" in content
     assert "EnterpriseRagHighAverageQueryLatency" in content
     assert "EnterpriseRagIngestJobFailures" in content
+
+
+def test_grafana_dashboard_is_valid_and_covers_rag_operations() -> None:
+    dashboard = json.loads(Path("monitoring/grafana/dashboards/enterprise-rag.json").read_text(encoding="utf-8"))
+    expressions = json.dumps(dashboard)
+
+    assert dashboard["title"] == "Enterprise RAG Operations"
+    assert dashboard["uid"] == "enterprise-rag-ops"
+    assert len(dashboard["panels"]) >= 8
+    assert "enterprise_rag_query_latency_ms_sum" in expressions
+    assert "enterprise_rag_query_failures_total" in expressions
+    assert "enterprise_rag_query_cache_hits_total" in expressions
+    assert "enterprise_rag_provider_latency_ms_sum" in expressions
+    assert "enterprise_rag_query_estimated_cost_usd_sum" in expressions
+    assert "enterprise_rag_ingest_job_failures_total" in expressions
+    assert "enterprise_rag_feedback_total" in expressions
+
+
+def test_grafana_provisioning_points_to_prometheus_and_dashboard() -> None:
+    datasource = Path("monitoring/grafana/provisioning/datasources/prometheus.yml").read_text(encoding="utf-8")
+    provider = Path("monitoring/grafana/provisioning/dashboards/enterprise-rag.yml").read_text(encoding="utf-8")
+
+    assert "url: http://prometheus:9090" in datasource
+    assert "isDefault: true" in datasource
+    assert "path: /var/lib/grafana/dashboards" in provider

@@ -77,12 +77,12 @@ Production-style Compose wiring:
 ```bash
 cp .env.example .env
 # Edit .env and replace ENTERPRISE_RAG_API_KEY / ENTERPRISE_RAG_API_KEYS.
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis prometheus
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis prometheus grafana
 ```
 
 This uses `config/production.example.json`, Qdrant, Redis cache, Redis leases, persistent app data,
 API key auth, audit logging, provider retry/circuit-breaker settings, guardrail budgets, and
-Prometheus monitoring.
+Prometheus/Grafana monitoring.
 
 Health check:
 
@@ -193,6 +193,10 @@ The production Compose stack starts Prometheus on `http://localhost:9090`. Prome
 `monitoring/prometheus.yml`, expands `ENTERPRISE_RAG_API_KEY` from the container environment, and scrapes
 the protected API `/metrics` endpoint. Alert examples live in `monitoring/alerts.yml` for query failures,
 high average query latency, and ingest job failures.
+
+Grafana starts on `http://localhost:3000` with a provisioned dashboard named **Enterprise RAG Operations**.
+For local demos the default login is `admin` / `admin`; set `GRAFANA_ADMIN_USER` and
+`GRAFANA_ADMIN_PASSWORD` in `.env` before using it beyond a local demo.
 
 Useful production RAG metrics include:
 
