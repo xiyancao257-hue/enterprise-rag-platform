@@ -1,0 +1,15 @@
+{
+  "documents": [
+    {
+      "id": "drive-enterprise-rag-notes",
+      "path": "enterprise_rag_notes.md",
+      "url": "https://drive.google.com/file/d/drive-enterprise-rag-notes/view",
+      "title": "Enterprise RAG Notes",
+      "modified_at": "2026-07-12T00:00:00Z",
+      "tenant_id": "acme",
+      "drive_id": "shared-drive-engineering",
+      "owner_email": "owner@example.com",
+      "allowed_groups": ["engineering", "support"]
+    }
+  ]
+}

@@ -7,7 +7,7 @@ It shows how ingestion, retrieval, generation, evaluation, security, and observa
 
 ```mermaid
 flowchart LR
-  A["Source Connectors<br/>Local files + S3-like manifest connector"] --> B["Ingestion Pipeline"]
+  A["Source Connectors<br/>Local files, S3-like, SaaS manifests"] --> B["Ingestion Pipeline"]
   B --> C["Source Sync Manifest<br/>active/deleted/source_version"]
   B --> D["Document Loaders<br/>Markdown, text, CSV, PDF, OCR"]
   D --> E["Cleaning + Redaction"]
@@ -44,7 +44,10 @@ The ingestion side is built around source ownership and data quality.
 - `SourceConnector` loads documents from a source system.
 - `LocalFileConnector` is the local implementation.
 - `S3LikeConnector` models cloud object ingestion with object keys, etags, versions, pagination, and ACL metadata.
-- Every document receives `source_system`, `source_uri`, `source_version`, and `source_updated_at`.
+- `SharePointManifestConnector`, `ConfluenceManifestConnector`, and `GoogleDriveManifestConnector` model
+  enterprise SaaS ingestion without requiring live credentials during tests or demos.
+- Every document receives `source_system`, `source_uri`, `source_version`, `source_updated_at`, and optional
+  tenant or ACL metadata such as `tenant_id` and `allowed_groups`.
 - `JsonSourceSyncManifestStore` records active and deleted sources separately from chunks.
 - `JsonIndexVersionStore` records explicit index versions for cache invalidation, query logs, and eval reproducibility.
 - Loaders support Markdown, text, CSV tables, text PDFs, scanned PDF page rendering, and image OCR.
@@ -115,7 +118,7 @@ Use this order when explaining the project:
 
 The strongest remaining upgrades are:
 
-- Upgrade the S3-like connector to a real cloud SDK connector, or add Confluence/SharePoint.
+- Upgrade manifest connectors to real cloud SDK/API connectors for SharePoint, Confluence, and Google Drive.
 - Add deeper Prometheus metrics around retrieval, rerank, compression, LLM, embedding, OCR, and provider errors.
 - Add load testing and latency budgets.
 - Add richer prompt-injection/adversarial eval cases.

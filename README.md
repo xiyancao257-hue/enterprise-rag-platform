@@ -325,12 +325,15 @@ Ingestion:
 
 - `ingestion/connectors.py` defines source connectors; `LocalFileConnector` preserves source metadata for local files.
 - `S3LikeConnector` demonstrates cloud-object ingestion with pagination, source versioning, etags, and ACL metadata.
+- `SharePointManifestConnector`, `ConfluenceManifestConnector`, and `GoogleDriveManifestConnector` simulate
+  enterprise SaaS connectors from manifest files while preserving tenant, URL, modified time, title, and ACL groups.
 - `ingestion/loaders.py` loads local `.txt`, `.md`, `.csv`, and text-based `.pdf` documents.
 - `.csv` files are converted into Markdown-style tables before parsing.
 - `.pdf` files use text extraction and preserve page markers before parsing.
 - Scanned PDFs can be rendered to page images with Poppler and routed through the configured OCR adapter.
 - Images can be routed through `ingestion/ocr.py`; by default OCR is disabled rather than silently guessing.
-- Connector metadata such as `source_system`, `source_uri`, `source_version`, and `source_updated_at` is propagated to chunks.
+- Connector metadata such as `source_system`, `source_uri`, `source_version`, `source_updated_at`, `tenant_id`,
+  and `allowed_groups` is propagated to chunks.
 - `ingestion/sync_manifest.py` tracks source sync state so updated and deleted sources can be audited independently from chunks.
 - `storage/index_version.py` records explicit index versions for cache invalidation, query logs, and reproducible evaluation.
 - `processing/cleaning.py` filters low-quality or duplicated text.

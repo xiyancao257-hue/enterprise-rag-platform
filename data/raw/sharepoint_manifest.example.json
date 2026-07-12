@@ -1,0 +1,16 @@
+{
+  "documents": [
+    {
+      "id": "sp-enterprise-rag-notes",
+      "path": "enterprise_rag_notes.md",
+      "url": "https://contoso.sharepoint.com/sites/engineering/enterprise_rag_notes.md",
+      "title": "Enterprise RAG Notes",
+      "modified_at": "2026-07-12T00:00:00Z",
+      "version": "sp-version-1",
+      "tenant_id": "acme",
+      "site_id": "engineering-site",
+      "site_name": "Engineering",
+      "allowed_groups": ["engineering", "support"]
+    }
+  ]
+}

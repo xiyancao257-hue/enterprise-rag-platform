@@ -1,0 +1,12 @@
+[
+  {
+    "id": "conf-auth-429-runbook",
+    "path": "kg_demo.md",
+    "url": "https://wiki.example.com/display/ENG/AUTH-429",
+    "title": "AUTH-429 Runbook",
+    "modified_at": "2026-07-12T00:00:00Z",
+    "tenant_id": "acme",
+    "space_key": "ENG",
+    "allowed_groups": ["engineering"]
+  }
+]

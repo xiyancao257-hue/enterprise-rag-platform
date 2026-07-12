@@ -129,6 +129,107 @@ class S3LikeConnector:
         )
 
 
+class EnterpriseManifestConnector:
+    source_system = "enterprise_manifest"
+    manifest_key = "documents"
+    required_fields = ("id", "path", "url", "title", "modified_at")
+
+    def __init__(
+        self,
+        manifest_path: Path,
+        policy: IngestionFilePolicy | None = None,
+        ocr_adapter: OcrAdapter | None = None,
+        pdf_page_renderer: PdfPageRenderer | None = None,
+        page_size: int = 100,
+    ) -> None:
+        self.manifest_path = manifest_path
+        self.policy = policy or IngestionFilePolicy()
+        self.ocr_adapter = ocr_adapter
+        self.pdf_page_renderer = pdf_page_renderer
+        self.page_size = page_size
+
+    def load(self, source_path: Path) -> LoadDocumentsResult:
+        documents: list[Document] = []
+        filtered_documents: list[FilteredDocument] = []
+        filter_reasons: dict[str, int] = {}
+        for page in self._list_pages():
+            for entry in page:
+                document_path = source_path / str(entry["path"])
+                result = load_documents_with_report(
+                    document_path,
+                    policy=self.policy,
+                    ocr_adapter=self.ocr_adapter,
+                    pdf_page_renderer=self.pdf_page_renderer,
+                )
+                documents.extend(self._with_enterprise_metadata(document, entry) for document in result.documents)
+                filtered_documents.extend(result.filtered_documents)
+                for reason, count in result.filter_reasons.items():
+                    filter_reasons[reason] = filter_reasons.get(reason, 0) + count
+        return LoadDocumentsResult(
+            documents=tuple(documents),
+            documents_filtered=sum(filter_reasons.values()),
+            filter_reasons=filter_reasons,
+            filtered_documents=tuple(filtered_documents),
+        )
+
+    def _list_pages(self) -> tuple[tuple[dict[str, object], ...], ...]:
+        entries = _load_enterprise_manifest_entries(
+            self.manifest_path,
+            manifest_key=self.manifest_key,
+            required_fields=self.required_fields,
+        )
+        pages = []
+        for start in range(0, len(entries), self.page_size):
+            pages.append(tuple(entries[start : start + self.page_size]))
+        return tuple(pages)
+
+    def _with_enterprise_metadata(self, document: Document, entry: dict[str, object]) -> Document:
+        source_uri = str(entry["url"])
+        source_id = str(entry["id"])
+        modified_at = str(entry["modified_at"])
+        version = str(entry.get("version", modified_at))
+        allowed_groups = ",".join(str(group) for group in entry.get("allowed_groups", ()))
+        metadata = {
+            **document.metadata,
+            "source_system": self.source_system,
+            "source_uri": source_uri,
+            "source_document_id": source_id,
+            "source_title": str(entry["title"]),
+            "source_version": version,
+            "source_updated_at": modified_at,
+        }
+        for key in (
+            "tenant_id",
+            "site_id",
+            "site_name",
+            "space_key",
+            "drive_id",
+            "owner_email",
+            "web_url",
+        ):
+            if entry.get(key) is not None:
+                metadata[key] = str(entry[key])
+        if allowed_groups:
+            metadata["allowed_groups"] = allowed_groups
+        return replace(
+            document,
+            id=hashlib.sha256(f"{self.source_system}:{source_uri}".encode()).hexdigest()[:16],
+            metadata=metadata,
+        )
+
+
+class SharePointManifestConnector(EnterpriseManifestConnector):
+    source_system = "sharepoint"
+
+
+class ConfluenceManifestConnector(EnterpriseManifestConnector):
+    source_system = "confluence"
+
+
+class GoogleDriveManifestConnector(EnterpriseManifestConnector):
+    source_system = "google_drive"
+
+
 def _file_uri(path: Path) -> str:
     return path.resolve(strict=False).as_uri()
 
@@ -151,5 +252,26 @@ def _load_manifest_entries(path: Path) -> list[dict[str, object]]:
             raise ValueError("Each S3-like manifest object must be a JSON object.")
         if "key" not in item or "path" not in item:
             raise ValueError("Each S3-like manifest object must include `key` and `path`.")
+        loaded.append(item)
+    return loaded
+
+
+def _load_enterprise_manifest_entries(
+    path: Path,
+    *,
+    manifest_key: str,
+    required_fields: tuple[str, ...],
+) -> list[dict[str, object]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get(manifest_key) if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        raise ValueError(f"Enterprise manifest must be a list or an object with a `{manifest_key}` list.")
+    loaded = []
+    for item in entries:
+        if not isinstance(item, dict):
+            raise ValueError("Each enterprise manifest entry must be a JSON object.")
+        missing = [field for field in required_fields if field not in item]
+        if missing:
+            raise ValueError(f"Enterprise manifest entry missing required fields: {', '.join(missing)}.")
         loaded.append(item)
     return loaded
