@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+from enterprise_rag.providers.resilience import ProviderResiliencePolicy
+
 
 class OpenAIEmbeddingNotConfiguredError(RuntimeError):
     pass
 
 
 class OpenAIEmbeddingModel:
-    def __init__(self, model: str = "text-embedding-3-small", client: object | None = None) -> None:
+    def __init__(
+        self,
+        model: str = "text-embedding-3-small",
+        client: object | None = None,
+        timeout_seconds: float = 30.0,
+        resilience: ProviderResiliencePolicy | None = None,
+    ) -> None:
         self.model = model
         self.client = client
+        self.timeout_seconds = timeout_seconds
+        self.resilience = resilience or ProviderResiliencePolicy()
 
     def embed(self, text: str) -> list[float]:
-        client = self.client or _default_openai_client()
+        return self.resilience.call(lambda: self._embed_once(text), provider_name="openai_embedding")
+
+    def _embed_once(self, text: str) -> list[float]:
+        client = self.client or _default_openai_client(timeout_seconds=self.timeout_seconds)
         response = client.embeddings.create(model=self.model, input=text)
         try:
             return list(response.data[0].embedding)
@@ -19,11 +32,11 @@ class OpenAIEmbeddingModel:
             raise OpenAIEmbeddingNotConfiguredError("OpenAI embedding response did not include an embedding.") from exc
 
 
-def _default_openai_client() -> object:
+def _default_openai_client(timeout_seconds: float) -> object:
     try:
         from openai import OpenAI
     except ImportError as exc:
         raise OpenAIEmbeddingNotConfiguredError(
             "OpenAI SDK is not installed. Install the optional OpenAI dependency before using provider=openai."
         ) from exc
-    return OpenAI()
+    return OpenAI(timeout=timeout_seconds)

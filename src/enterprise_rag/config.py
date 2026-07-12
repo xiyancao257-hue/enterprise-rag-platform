@@ -92,6 +92,11 @@ class LLMConfig:
     model: str = "gpt-4.1-mini"
     input_cost_per_1k_tokens: float = 0.0
     output_cost_per_1k_tokens: float = 0.0
+    timeout_seconds: float = 30.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 0.0
+    circuit_breaker_failure_threshold: int = 0
+    circuit_breaker_reset_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -99,6 +104,11 @@ class EmbeddingConfig:
     provider: str = "hashing"
     model: str = "text-embedding-3-small"
     dimensions: int = 384
+    timeout_seconds: float = 30.0
+    max_retries: int = 0
+    retry_backoff_seconds: float = 0.0
+    circuit_breaker_failure_threshold: int = 0
+    circuit_breaker_reset_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -260,11 +270,33 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             output_cost_per_1k_tokens=float(
                 llm_data.get("output_cost_per_1k_tokens", LLMConfig.output_cost_per_1k_tokens)
             ),
+            timeout_seconds=float(llm_data.get("timeout_seconds", LLMConfig.timeout_seconds)),
+            max_retries=int(llm_data.get("max_retries", LLMConfig.max_retries)),
+            retry_backoff_seconds=float(llm_data.get("retry_backoff_seconds", LLMConfig.retry_backoff_seconds)),
+            circuit_breaker_failure_threshold=int(
+                llm_data.get("circuit_breaker_failure_threshold", LLMConfig.circuit_breaker_failure_threshold)
+            ),
+            circuit_breaker_reset_seconds=float(
+                llm_data.get("circuit_breaker_reset_seconds", LLMConfig.circuit_breaker_reset_seconds)
+            ),
         ),
         embedding=EmbeddingConfig(
             provider=str(embedding_data.get("provider", EmbeddingConfig.provider)),
             model=str(embedding_data.get("model", EmbeddingConfig.model)),
             dimensions=int(embedding_data.get("dimensions", EmbeddingConfig.dimensions)),
+            timeout_seconds=float(embedding_data.get("timeout_seconds", EmbeddingConfig.timeout_seconds)),
+            max_retries=int(embedding_data.get("max_retries", EmbeddingConfig.max_retries)),
+            retry_backoff_seconds=float(
+                embedding_data.get("retry_backoff_seconds", EmbeddingConfig.retry_backoff_seconds)
+            ),
+            circuit_breaker_failure_threshold=int(
+                embedding_data.get(
+                    "circuit_breaker_failure_threshold", EmbeddingConfig.circuit_breaker_failure_threshold
+                )
+            ),
+            circuit_breaker_reset_seconds=float(
+                embedding_data.get("circuit_breaker_reset_seconds", EmbeddingConfig.circuit_breaker_reset_seconds)
+            ),
         ),
         guardrails=GuardrailsConfig(
             min_citations=int(guardrails_data.get("min_citations", GuardrailsConfig.min_citations)),

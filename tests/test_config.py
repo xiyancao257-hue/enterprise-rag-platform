@@ -81,11 +81,21 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "model": "gpt-test",
                 "input_cost_per_1k_tokens": 0.1,
                 "output_cost_per_1k_tokens": 0.2,
+                "timeout_seconds": 12.0,
+                "max_retries": 2,
+                "retry_backoff_seconds": 0.5,
+                "circuit_breaker_failure_threshold": 3,
+                "circuit_breaker_reset_seconds": 45.0,
             },
             "embedding": {
                 "provider": "openai",
                 "model": "text-embedding-test",
                 "dimensions": 1024,
+                "timeout_seconds": 8.0,
+                "max_retries": 1,
+                "retry_backoff_seconds": 0.25,
+                "circuit_breaker_failure_threshold": 2,
+                "circuit_breaker_reset_seconds": 20.0,
             },
             "guardrails": {
                 "min_citations": 2,
@@ -153,9 +163,19 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1
     assert config.llm.output_cost_per_1k_tokens == 0.2
+    assert config.llm.timeout_seconds == 12.0
+    assert config.llm.max_retries == 2
+    assert config.llm.retry_backoff_seconds == 0.5
+    assert config.llm.circuit_breaker_failure_threshold == 3
+    assert config.llm.circuit_breaker_reset_seconds == 45.0
     assert config.embedding.provider == "openai"
     assert config.embedding.model == "text-embedding-test"
     assert config.embedding.dimensions == 1024
+    assert config.embedding.timeout_seconds == 8.0
+    assert config.embedding.max_retries == 1
+    assert config.embedding.retry_backoff_seconds == 0.25
+    assert config.embedding.circuit_breaker_failure_threshold == 2
+    assert config.embedding.circuit_breaker_reset_seconds == 20.0
     assert config.guardrails.min_citations == 2
     assert config.guardrails.min_top_score == 0.25
     assert config.guardrails.min_evidence_tokens == 12

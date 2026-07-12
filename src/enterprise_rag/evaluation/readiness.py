@@ -230,6 +230,15 @@ def _enterprise_checks(
             f"provider={config.leases.provider}",
         ),
         _check(
+            "provider_resilience",
+            "pass" if _provider_resilience_enabled(config) else "warn",
+            (
+                "LLM/embedding retries or circuit breakers configured"
+                if _provider_resilience_enabled(config)
+                else "LLM/embedding provider resilience disabled"
+            ),
+        ),
+        _check(
             "eval_coverage",
             "pass" if eval_present and eval_case_count > 0 else "fail",
             f"{eval_case_count} eval cases" if eval_present else "retrieval eval file missing",
@@ -254,6 +263,18 @@ def _enterprise_checks(
             if config.ingestion.allowed_source_roots
             else "allowed_source_roots is empty",
         ),
+    )
+
+
+def _provider_resilience_enabled(config: AppConfig) -> bool:
+    return any(
+        value > 0
+        for value in (
+            config.llm.max_retries,
+            config.llm.circuit_breaker_failure_threshold,
+            config.embedding.max_retries,
+            config.embedding.circuit_breaker_failure_threshold,
+        )
     )
 
 

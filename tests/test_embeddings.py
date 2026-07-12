@@ -6,6 +6,7 @@ from enterprise_rag.embeddings.cached import CachedEmbeddingModel
 from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.embeddings.hashing import HashingEmbeddingModel
 from enterprise_rag.embeddings.openai_embeddings import OpenAIEmbeddingModel, OpenAIEmbeddingNotConfiguredError
+from enterprise_rag.providers.resilience import ProviderResiliencePolicy
 
 
 class CountingEmbeddingModel:
@@ -82,6 +83,31 @@ def test_openai_embedding_model_calls_embeddings_api() -> None:
     assert calls == [{"model": "embedding-test", "input": "hybrid retrieval"}]
 
 
+def test_openai_embedding_model_uses_resilience_policy_for_transient_failures() -> None:
+    calls = 0
+
+    class FakeEmbeddings:
+        def create(self, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("temporary outage")
+            data = [type("EmbeddingData", (), {"embedding": [0.4, 0.5]})()]
+            return type("EmbeddingResponse", (), {"data": data})()
+
+    class FakeClient:
+        embeddings = FakeEmbeddings()
+
+    model = OpenAIEmbeddingModel(
+        model="embedding-test",
+        client=FakeClient(),
+        resilience=ProviderResiliencePolicy(max_retries=1),
+    )
+
+    assert model.embed("hybrid retrieval") == [0.4, 0.5]
+    assert calls == 2
+
+
 def test_embedding_factory_builds_hashing_model() -> None:
     model = create_embedding_model(EmbeddingConfig(provider="hashing", dimensions=12))
 
@@ -90,10 +116,25 @@ def test_embedding_factory_builds_hashing_model() -> None:
 
 
 def test_embedding_factory_builds_openai_model() -> None:
-    model = create_embedding_model(EmbeddingConfig(provider="openai", model="embedding-test"))
+    model = create_embedding_model(
+        EmbeddingConfig(
+            provider="openai",
+            model="embedding-test",
+            timeout_seconds=8.0,
+            max_retries=1,
+            retry_backoff_seconds=0.25,
+            circuit_breaker_failure_threshold=2,
+            circuit_breaker_reset_seconds=20.0,
+        )
+    )
 
     assert isinstance(model, OpenAIEmbeddingModel)
     assert model.model == "embedding-test"
+    assert model.timeout_seconds == 8.0
+    assert model.resilience.max_retries == 1
+    assert model.resilience.retry_backoff_seconds == 0.25
+    assert model.resilience.circuit_breaker_failure_threshold == 2
+    assert model.resilience.circuit_breaker_reset_seconds == 20.0
 
 
 def test_embedding_factory_rejects_unknown_provider() -> None:

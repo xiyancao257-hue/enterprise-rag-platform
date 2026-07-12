@@ -5,8 +5,10 @@ from enterprise_rag.config import (
     AppConfig,
     AuditConfig,
     CacheConfig,
+    EmbeddingConfig,
     IngestionConfig,
     LeaseConfig,
+    LLMConfig,
     VectorIndexConfig,
 )
 from enterprise_rag.evaluation.readiness import build_readiness_report, format_readiness_report
@@ -67,6 +69,8 @@ def test_build_readiness_report_with_eval_log_and_self_healing_artifacts(tmp_pat
             vector_index=VectorIndexConfig(provider="qdrant"),
             cache=CacheConfig(provider="redis"),
             leases=LeaseConfig(provider="redis"),
+            llm=LLMConfig(max_retries=2, circuit_breaker_failure_threshold=3),
+            embedding=EmbeddingConfig(max_retries=1),
             ingestion=IngestionConfig(allowed_source_roots=("data/raw",)),
         ),
         k=1,
@@ -91,6 +95,7 @@ def test_build_readiness_report_with_eval_log_and_self_healing_artifacts(tmp_pat
         "vector_index": "pass",
         "cache": "pass",
         "leases": "pass",
+        "provider_resilience": "pass",
         "eval_coverage": "pass",
         "query_logging": "pass",
         "self_healing": "pass",
