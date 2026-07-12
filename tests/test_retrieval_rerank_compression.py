@@ -59,6 +59,43 @@ def test_metadata_filter_enforces_allowed_groups_acl() -> None:
     assert metadata_filter.apply_chunks([public_chunk, security_chunk, finance_chunk]) == [public_chunk, security_chunk]
 
 
+def test_metadata_filter_blocks_protected_chunks_without_access_context() -> None:
+    public_chunk = Chunk(id="public", document_id="doc1", text="Public policy.")
+    protected_chunk = Chunk(
+        id="protected",
+        document_id="doc1",
+        text="Protected policy.",
+        metadata={"allowed_groups": "security"},
+    )
+
+    assert MetadataFilter().apply_chunks([public_chunk, protected_chunk]) == [public_chunk]
+
+
+def test_metadata_filter_supports_roles_users_and_denies() -> None:
+    role_chunk = Chunk(
+        id="role",
+        document_id="doc1",
+        text="Auditor policy.",
+        metadata={"allowed_roles": "auditor"},
+    )
+    user_chunk = Chunk(
+        id="user",
+        document_id="doc1",
+        text="Alice policy.",
+        metadata={"allowed_users": "alice"},
+    )
+    denied_chunk = Chunk(
+        id="denied",
+        document_id="doc1",
+        text="Contractor blocked policy.",
+        metadata={"allowed_roles": "auditor", "denied_roles": "contractor"},
+    )
+
+    metadata_filter = MetadataFilter(user_id="alice", user_roles={"auditor", "contractor"})
+
+    assert metadata_filter.apply_chunks([role_chunk, user_chunk, denied_chunk]) == [role_chunk, user_chunk]
+
+
 def test_bm25_retriever_finds_exact_keyword_match() -> None:
     chunks = [
         make_chunk("auth", "Error code AUTH-429 means the authentication service rate limit was exceeded."),

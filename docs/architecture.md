@@ -74,8 +74,10 @@ The query path is designed to avoid depending on one retrieval method.
 Enterprise RAG must prevent data leakage.
 
 - Tenant identity comes from trusted request headers or job metadata, not natural-language query text.
-- Retrieval applies mandatory tenant filters and ACL group checks.
-- Query cache keys include tenant, user groups, metadata filters, retrieval profile, top-k, and index version.
+- Retrieval applies mandatory tenant filters and a centralized `AccessPolicy`.
+- ACL metadata supports allow/deny users, groups, and roles; deny rules take precedence.
+- User identity, groups, and roles can be supplied through trusted request headers.
+- Query cache keys include tenant, user identity, user groups, user roles, metadata filters, retrieval profile, top-k, and index version.
 - Audit logs record query and ingest activity.
 - Prompt injection checks remove unsafe retrieved context before answer generation.
 

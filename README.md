@@ -261,9 +261,16 @@ When API key auth is enabled, protected API calls also require `X-Tenant-ID`:
 curl -X POST http://localhost:8000/query \
   -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
   -H "X-Tenant-ID: acme" \
+  -H "X-User-ID: alice" \
+  -H "X-User-Groups: engineering,support" \
+  -H "X-User-Roles: auditor" \
   -H "Content-Type: application/json" \
   -d '{"query":"What does AUTH-429 affect?","top_k":3}'
 ```
+
+Retrieval uses a centralized access policy. Chunk metadata can include `allowed_users`, `allowed_groups`,
+`allowed_roles`, `denied_users`, `denied_groups`, and `denied_roles`; deny rules take precedence over allow
+rules. Identity should come from trusted gateway or auth headers, not from the natural-language query.
 
 For A/B tests or rollout experiments, pass experiment metadata through trusted headers. The API includes
 the experiment in the response, query cache profile, logs, and audit event so variants can be compared

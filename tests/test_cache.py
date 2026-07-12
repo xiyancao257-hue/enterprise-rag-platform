@@ -87,6 +87,24 @@ def test_query_cache_key_changes_when_retrieval_profile_changes(tmp_path) -> Non
     assert graph_off != graph_on
 
 
+def test_query_cache_key_changes_for_user_identity_and_roles(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text("[]", encoding="utf-8")
+    base = {
+        "query": "hybrid retrieval",
+        "tenant_id": "acme",
+        "user_groups": {"engineering"},
+        "metadata_filters": {"tenant_id": "acme"},
+        "top_k": 5,
+        "index_path": index_path,
+    }
+
+    auditor = build_query_cache_key(**base, user_id="alice", user_roles={"auditor"})
+    reader = build_query_cache_key(**base, user_id="bob", user_roles={"reader"})
+
+    assert auditor != reader
+
+
 def test_query_cache_key_is_stable_for_different_profile_dict_order(tmp_path) -> None:
     index_path = tmp_path / "chunks.json"
     index_path.write_text("[]", encoding="utf-8")

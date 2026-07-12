@@ -44,8 +44,15 @@ class HybridRetriever:
         top_k: int = 8,
         metadata_filters: dict[str, str] | None = None,
         user_groups: set[str] | None = None,
+        user_id: str | None = None,
+        user_roles: set[str] | None = None,
     ) -> list[SearchHit]:
-        metadata_filter = MetadataFilter(metadata_filters, user_groups=user_groups)
+        metadata_filter = MetadataFilter(
+            metadata_filters,
+            user_groups=user_groups,
+            user_id=user_id,
+            user_roles=user_roles,
+        )
         candidate_lists: list[list[SearchHit]] = []
         for query in queries:
             candidate_lists.append(metadata_filter.apply_hits(self.bm25.search(query, top_k=top_k * 2)))

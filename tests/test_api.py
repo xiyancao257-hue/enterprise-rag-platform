@@ -4,7 +4,16 @@ from hashlib import sha256
 
 from fastapi.testclient import TestClient
 
-from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, MetricsCollector, create_app
+from enterprise_rag.api.app import (
+    API_KEY_HEADER,
+    REQUEST_ID_HEADER,
+    TENANT_ID_HEADER,
+    USER_GROUPS_HEADER,
+    USER_ID_HEADER,
+    USER_ROLES_HEADER,
+    MetricsCollector,
+    create_app,
+)
 from enterprise_rag.config import (
     ApiKeyCredential,
     ApiSecurityConfig,
@@ -302,7 +311,7 @@ def test_query_completed_writes_audit_event(tmp_path) -> None:
 
     response = client.post(
         "/query",
-        headers={REQUEST_ID_HEADER: "req_audit_123"},
+        headers={REQUEST_ID_HEADER: "req_audit_123", USER_ID_HEADER: "alice", USER_ROLES_HEADER: "auditor"},
         json={"query": "hybrid retrieval", "top_k": 1, "user_groups": ["engineering"]},
     )
 
@@ -313,8 +322,68 @@ def test_query_completed_writes_audit_event(tmp_path) -> None:
     assert audit_event["principal"] == "anonymous"
     assert audit_event["attributes"]["citation_chunk_ids"] == ["hybrid"]
     assert audit_event["attributes"]["user_groups"] == ["engineering"]
+    assert audit_event["attributes"]["user_id"] == "alice"
+    assert audit_event["attributes"]["user_roles"] == ["auditor"]
     assert audit_event["attributes"]["needs_human_review"] is False
     assert audit_event["attributes"]["human_review_reasons"] == []
+
+
+def test_query_uses_trusted_user_role_headers_for_acl(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="auditor",
+                document_id="doc1",
+                text="Audit retention policy for enterprise RAG.",
+                metadata={"allowed_roles": "auditor"},
+            ),
+            Chunk(
+                id="public",
+                document_id="doc2",
+                text="Public audit retention policy notes.",
+            ),
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.post(
+        "/query",
+        headers={USER_ID_HEADER: "alice", USER_GROUPS_HEADER: "engineering", USER_ROLES_HEADER: "auditor"},
+        json={"query": "audit retention policy", "top_k": 2},
+    )
+
+    assert response.status_code == 200
+    assert {citation["chunk_id"] for citation in response.json()["citations"]} == {"auditor", "public"}
+
+
+def test_query_deny_acl_overrides_allowed_group(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="blocked",
+                document_id="doc1",
+                text="Security retention policy.",
+                metadata={"allowed_groups": "security", "denied_groups": "contractors"},
+            ),
+            Chunk(
+                id="public",
+                document_id="doc2",
+                text="Public retention policy.",
+            ),
+        ]
+    )
+    client = TestClient(create_app(index_path=index_path))
+
+    response = client.post(
+        "/query",
+        headers={USER_GROUPS_HEADER: "security,contractors"},
+        json={"query": "retention policy", "top_k": 2},
+    )
+
+    assert response.status_code == 200
+    assert [citation["chunk_id"] for citation in response.json()["citations"]] == ["public"]
 
 
 def test_query_guardrails_flag_human_review_for_cost_and_sensitive_topic(tmp_path) -> None:

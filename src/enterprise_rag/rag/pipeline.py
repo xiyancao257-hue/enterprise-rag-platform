@@ -55,8 +55,21 @@ class RagPipeline:
     def answer(self, query: str, top_k: int = 5) -> RagAnswer:
         return self.answer_for_user(query, top_k=top_k)
 
-    def answer_for_user(self, query: str, top_k: int = 5, user_groups: set[str] | None = None) -> RagAnswer:
-        answer, _trace = self.answer_for_user_with_trace(query, top_k=top_k, user_groups=user_groups)
+    def answer_for_user(
+        self,
+        query: str,
+        top_k: int = 5,
+        user_groups: set[str] | None = None,
+        user_id: str | None = None,
+        user_roles: set[str] | None = None,
+    ) -> RagAnswer:
+        answer, _trace = self.answer_for_user_with_trace(
+            query,
+            top_k=top_k,
+            user_groups=user_groups,
+            user_id=user_id,
+            user_roles=user_roles,
+        )
         return answer
 
     def answer_for_user_with_trace(
@@ -64,6 +77,8 @@ class RagPipeline:
         query: str,
         top_k: int = 5,
         user_groups: set[str] | None = None,
+        user_id: str | None = None,
+        user_roles: set[str] | None = None,
         mandatory_metadata_filters: dict[str, str] | None = None,
     ) -> tuple[RagAnswer, QueryTrace]:
         total_started_at = time.perf_counter()
@@ -83,6 +98,8 @@ class RagPipeline:
             top_k=max(top_k * 2, 8),
             metadata_filters=metadata_filters,
             user_groups=user_groups,
+            user_id=user_id,
+            user_roles=user_roles,
         )
         timings_ms["retrieval"] = _elapsed_ms(stage_started_at)
 

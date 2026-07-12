@@ -47,6 +47,9 @@ DEFAULT_FEEDBACK = Path("data/feedback/feedback.jsonl")
 REQUEST_ID_HEADER = "X-Request-ID"
 API_KEY_HEADER = "X-API-Key"
 TENANT_ID_HEADER = "X-Tenant-ID"
+USER_ID_HEADER = "X-User-ID"
+USER_GROUPS_HEADER = "X-User-Groups"
+USER_ROLES_HEADER = "X-User-Roles"
 EXPERIMENT_NAME_HEADER = "X-Experiment-Name"
 EXPERIMENT_VARIANT_HEADER = "X-Experiment-Variant"
 EXPERIMENT_KEY_HEADER = "X-Experiment-Key"
@@ -291,6 +294,7 @@ class QueryRequest(BaseModel):
     query: str = Field(min_length=1)
     top_k: int | None = Field(default=None, ge=1, le=50)
     user_groups: list[str] = Field(default_factory=list)
+    user_roles: list[str] = Field(default_factory=list)
     include_trace: bool = False
 
 
@@ -749,13 +753,17 @@ def create_app(
         config: AppConfig = app.state.config
         experiment = _experiment_response(request, config, tenant_id, payload.query)
         runtime = _query_runtime_settings(payload, config, experiment)
-        user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
+        user_id = _request_user_id(request)
+        user_groups = _request_user_groups(request, payload, config)
+        user_roles = _request_user_roles(request, payload)
         mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
         index_version = app.state.index_version_store.current_id(app.state.index_path)
         query_cache_key = build_query_cache_key(
             query=payload.query,
             tenant_id=tenant_id,
+            user_id=user_id,
             user_groups=user_groups,
+            user_roles=user_roles,
             metadata_filters=mandatory_metadata_filters,
             top_k=runtime.top_k,
             index_path=app.state.index_path,
@@ -809,6 +817,8 @@ def create_app(
             payload.query,
             top_k=runtime.top_k,
             user_groups=user_groups,
+            user_id=user_id,
+            user_roles=user_roles,
             mandatory_metadata_filters=mandatory_metadata_filters,
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
@@ -845,6 +855,8 @@ def create_app(
             index_version=index_version,
             tenant_id=tenant_id,
             experiment=experiment.model_dump() if experiment is not None else None,
+            user_id=user_id,
+            user_roles=sorted(user_roles),
             estimated_input_tokens=cost.input_tokens,
             estimated_output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
@@ -867,6 +879,8 @@ def create_app(
                     "index_version": index_version,
                     "experiment": experiment.model_dump() if experiment is not None else None,
                     "user_groups": payload.user_groups,
+                    "user_id": user_id,
+                    "user_roles": sorted(user_roles),
                     "estimated_input_tokens": cost.input_tokens,
                     "estimated_output_tokens": cost.output_tokens,
                     "estimated_cost_usd": cost.estimated_cost_usd,
@@ -1521,6 +1535,27 @@ def _tenant_metadata_filter(tenant_id: str | None) -> dict[str, str]:
     if tenant_id is None:
         return {}
     return {"tenant_id": tenant_id}
+
+
+def _request_user_id(request: Request) -> str | None:
+    value = request.headers.get(USER_ID_HEADER, "").strip()
+    return value or None
+
+
+def _request_user_groups(request: Request, payload: QueryRequest, config: AppConfig) -> set[str]:
+    groups = set(payload.user_groups) or set(config.security.default_user_groups)
+    groups.update(_parse_header_csv(request.headers.get(USER_GROUPS_HEADER, "")))
+    return groups
+
+
+def _request_user_roles(request: Request, payload: QueryRequest) -> set[str]:
+    roles = set(payload.user_roles)
+    roles.update(_parse_header_csv(request.headers.get(USER_ROLES_HEADER, "")))
+    return roles
+
+
+def _parse_header_csv(value: str) -> set[str]:
+    return {item.strip() for item in value.split(",") if item.strip()}
 
 
 def _extract_api_key(request: Request) -> str | None:
