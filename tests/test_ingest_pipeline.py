@@ -508,7 +508,8 @@ def test_redactor_masks_sensitive_values_before_indexing() -> None:
         text=(
             "Contact alice@example.com or 415-555-0100. "
             "SSN 123-45-6789. "
-            "Use api_key=abc123456789 and sk-testsecret123456."
+            "Use api_key=abc123456789 and sk-testsecret123456. "
+            "AWS key AKIA1234567890ABCDEF and GitHub token ghp_abcdefghijklmnopqrstuvwxyz."
         ),
     )
 
@@ -519,9 +520,14 @@ def test_redactor_masks_sensitive_values_before_indexing() -> None:
     assert "123-45-6789" not in redacted.text
     assert "abc123456789" not in redacted.text
     assert "sk-testsecret123456" not in redacted.text
+    assert "AKIA1234567890ABCDEF" not in redacted.text
+    assert "ghp_abcdefghijklmnopqrstuvwxyz" not in redacted.text
     assert "[REDACTED_EMAIL]" in redacted.text
+    assert "[REDACTED_AWS_ACCESS_KEY]" in redacted.text
+    assert "[REDACTED_GITHUB_TOKEN]" in redacted.text
     assert redacted.metadata["redacted"] == "true"
     assert "email" in redacted.metadata["redaction_types"]
+    assert "aws_access_key:1" in redacted.metadata["redaction_counts"]
 
 
 def test_parser_preserves_heading_path_and_tables() -> None:
@@ -713,11 +719,13 @@ def test_incremental_ingest_redacts_sensitive_values_in_chunks(tmp_path: Path) -
     chunks = store.load()
 
     assert report.documents_new == 1
+    assert report.redaction_counts == {"api_token": 1, "email": 1}
     assert "alice@example.com" not in chunks[0].text
     assert "abc123456789" not in chunks[0].text
     assert "[REDACTED_EMAIL]" in chunks[0].text
     assert chunks[0].metadata["redacted"] == "true"
     assert "api_token" in chunks[0].metadata["redaction_types"]
+    assert chunks[0].metadata["redaction_counts"] == "api_token:1,email:1"
 
 
 def _write_minimal_pdf(path: Path, text: str) -> None:

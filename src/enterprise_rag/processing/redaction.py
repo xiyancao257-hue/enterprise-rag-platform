@@ -35,6 +35,7 @@ class SensitiveDataRedactor:
                 "redacted": "true",
                 "redaction_types": ",".join(sorted(counts)),
                 "redaction_count": str(sum(counts.values())),
+                "redaction_counts": ",".join(f"{label}:{counts[label]}" for label in sorted(counts)),
             },
         )
 
@@ -64,6 +65,21 @@ DEFAULT_REDACTION_RULES = (
         label="openai_key",
         pattern=re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
         replacement="[REDACTED_SECRET]",
+    ),
+    RedactionRule(
+        label="aws_access_key",
+        pattern=re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+        replacement="[REDACTED_AWS_ACCESS_KEY]",
+    ),
+    RedactionRule(
+        label="github_token",
+        pattern=re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
+        replacement="[REDACTED_GITHUB_TOKEN]",
+    ),
+    RedactionRule(
+        label="jwt",
+        pattern=re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+        replacement="[REDACTED_JWT]",
     ),
     RedactionRule(
         label="api_token",

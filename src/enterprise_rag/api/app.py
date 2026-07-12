@@ -307,6 +307,7 @@ class IngestReportResponse(BaseModel):
     documents_deleted: int
     documents_filtered: int
     filter_reasons: dict[str, int]
+    redaction_counts: dict[str, int]
     chunks_indexed: int
     chunks_upserted: list[str]
     chunks_deleted: list[str]
@@ -953,6 +954,7 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         documents_deleted=report.documents_deleted,
         documents_filtered=report.documents_filtered,
         filter_reasons=report.filter_reasons or {},
+        redaction_counts=report.redaction_counts or {},
         chunks_indexed=report.chunks_indexed,
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),

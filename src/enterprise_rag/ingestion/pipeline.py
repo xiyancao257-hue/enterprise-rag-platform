@@ -33,6 +33,7 @@ class IngestReport:
     chunks_deleted: tuple[str, ...] = ()
     index_version: str | None = None
     filter_reasons: dict[str, int] = field(default_factory=dict)
+    redaction_counts: dict[str, int] = field(default_factory=dict)
     filtered_documents: tuple[FilteredDocument, ...] = ()
     dry_run: bool = False
 
@@ -94,6 +95,7 @@ class IncrementalIngestPipeline:
         documents_unchanged = 0
         documents_filtered = load_result.documents_filtered
         filter_reasons = dict(load_result.filter_reasons)
+        redaction_counts: dict[str, int] = {}
         filtered_documents = list(load_result.filtered_documents)
         chunks_upserted: list[str] = []
         chunks_deleted: list[str] = []
@@ -121,6 +123,8 @@ class IncrementalIngestPipeline:
                 documents_new += 1
                 chunks_upserted.extend(chunk.id for chunk in processed_chunks)
 
+            if processed_chunks:
+                self._merge_redaction_counts(redaction_counts, processed_chunks[0].metadata)
             next_chunks.extend(processed_chunks)
 
         existing_sources_in_scope = {source_key for source_key in existing_by_source if source_key[0] == ingest_scope}
@@ -154,6 +158,7 @@ class IncrementalIngestPipeline:
             chunks_deleted=tuple(chunks_deleted),
             index_version=index_version,
             filter_reasons=filter_reasons,
+            redaction_counts=redaction_counts,
             filtered_documents=tuple(filtered_documents),
             dry_run=dry_run,
         )
@@ -220,3 +225,12 @@ class IncrementalIngestPipeline:
 
     def _count_filter_reason(self, filter_reasons: dict[str, int], reason: str) -> None:
         filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
+
+    def _merge_redaction_counts(self, redaction_counts: dict[str, int], metadata: dict[str, str]) -> None:
+        for item in metadata.get("redaction_counts", "").split(","):
+            if not item:
+                continue
+            label, separator, count = item.partition(":")
+            if not separator:
+                continue
+            redaction_counts[label] = redaction_counts.get(label, 0) + int(count)

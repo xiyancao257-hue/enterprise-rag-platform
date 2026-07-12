@@ -1032,7 +1032,10 @@ def test_ingest_job_indexes_documents_and_records_status(tmp_path) -> None:
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     source = raw_dir / "guide.md"
-    source.write_text("# Guide\n\nHybrid retrieval combines BM25 and vector search.", encoding="utf-8")
+    source.write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search. Contact alice@example.com.",
+        encoding="utf-8",
+    )
     index_path = tmp_path / "chunks.json"
     client = TestClient(create_app(index_path=index_path))
 
@@ -1053,6 +1056,7 @@ def test_ingest_job_indexes_documents_and_records_status(tmp_path) -> None:
     assert payload["max_attempts"] == 3
     assert payload["report"]["documents_new"] == 1
     assert payload["report"]["chunks_indexed"] == 1
+    assert payload["report"]["redaction_counts"] == {"email": 1}
     assert chunks[0].metadata["source_path"] == str(source)
 
 
