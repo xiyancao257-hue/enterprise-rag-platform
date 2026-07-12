@@ -95,6 +95,13 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class EmbeddingConfig:
+    provider: str = "hashing"
+    model: str = "text-embedding-3-small"
+    dimensions: int = 384
+
+
+@dataclass(frozen=True)
 class GuardrailsConfig:
     min_citations: int = 1
     min_top_score: float = 0.01
@@ -137,6 +144,7 @@ class AppConfig:
     ocr: OcrConfig = field(default_factory=OcrConfig)
     chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
     leases: LeaseConfig = field(default_factory=LeaseConfig)
@@ -171,6 +179,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     ocr_data = _section(data, "ocr")
     chunking_data = _section(data, "chunking")
     llm_data = _section(data, "llm")
+    embedding_data = _section(data, "embedding")
     guardrails_data = _section(data, "guardrails")
     audit_data = _section(data, "audit")
     leases_data = _section(data, "leases")
@@ -251,6 +260,11 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             output_cost_per_1k_tokens=float(
                 llm_data.get("output_cost_per_1k_tokens", LLMConfig.output_cost_per_1k_tokens)
             ),
+        ),
+        embedding=EmbeddingConfig(
+            provider=str(embedding_data.get("provider", EmbeddingConfig.provider)),
+            model=str(embedding_data.get("model", EmbeddingConfig.model)),
+            dimensions=int(embedding_data.get("dimensions", EmbeddingConfig.dimensions)),
         ),
         guardrails=GuardrailsConfig(
             min_citations=int(guardrails_data.get("min_citations", GuardrailsConfig.min_citations)),

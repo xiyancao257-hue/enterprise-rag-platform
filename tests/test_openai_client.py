@@ -13,10 +13,34 @@ def test_openai_client_stores_model_name() -> None:
 
 
 def test_openai_client_stub_raises_clear_configuration_error() -> None:
-    client = OpenAIClient()
+    class FakeResponses:
+        def create(self, **kwargs):
+            return object()
 
-    with pytest.raises(OpenAIClientNotConfiguredError, match="adapter stub"):
+    class FakeClient:
+        responses = FakeResponses()
+
+    client = OpenAIClient(client=FakeClient())
+
+    with pytest.raises(OpenAIClientNotConfiguredError, match="output_text"):
         client.complete("prompt")
+
+
+def test_openai_client_calls_responses_api() -> None:
+    calls = []
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return type("Response", (), {"output_text": "grounded answer"})()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    client = OpenAIClient(model="gpt-test", client=FakeClient())
+
+    assert client.complete("prompt text") == "grounded answer"
+    assert calls == [{"model": "gpt-test", "input": "prompt text"}]
 
 
 def test_openai_client_matches_llm_answer_generator_client_interface() -> None:

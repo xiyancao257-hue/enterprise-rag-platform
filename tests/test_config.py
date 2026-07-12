@@ -82,6 +82,11 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "input_cost_per_1k_tokens": 0.1,
                 "output_cost_per_1k_tokens": 0.2,
             },
+            "embedding": {
+                "provider": "openai",
+                "model": "text-embedding-test",
+                "dimensions": 1024,
+            },
             "guardrails": {
                 "min_citations": 2,
                 "min_top_score": 0.25,
@@ -148,6 +153,9 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1
     assert config.llm.output_cost_per_1k_tokens == 0.2
+    assert config.embedding.provider == "openai"
+    assert config.embedding.model == "text-embedding-test"
+    assert config.embedding.dimensions == 1024
     assert config.guardrails.min_citations == 2
     assert config.guardrails.min_top_score == 0.25
     assert config.guardrails.min_evidence_tokens == 12
@@ -212,3 +220,4 @@ def test_production_example_config_loads() -> None:
     assert config.guardrails.max_estimated_cost_usd == 0.02
     assert config.ingestion.allowed_source_roots
     assert config.ocr.provider == "disabled"
+    assert config.embedding.provider == "hashing"

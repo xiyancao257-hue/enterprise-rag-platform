@@ -10,7 +10,8 @@ from enterprise_rag.storage.json_store import JsonChunkStore
 class RecordingVectorSync:
     calls = []
 
-    def __init__(self, embedding_cache=None, embedding_ttl_seconds=None) -> None:
+    def __init__(self, embedding_model=None, embedding_cache=None, embedding_ttl_seconds=None) -> None:
+        self.embedding_model = embedding_model
         self.embedding_cache = embedding_cache
         self.embedding_ttl_seconds = embedding_ttl_seconds
 

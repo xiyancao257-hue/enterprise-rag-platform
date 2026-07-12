@@ -107,11 +107,11 @@ This makes the project feel like an engineering system, not just a notebook demo
 
 ## Tradeoffs
 
-The local vector model is deterministic and lightweight, which makes tests fast and reproducible. In production, I would replace it with a real embedding model and vector database.
+The local vector model is deterministic and lightweight, which makes tests fast and reproducible. For production-style runs, the embedding provider can be switched to OpenAI while keeping hashing embeddings as the test fallback.
 
 The graph extractor is rule-based, which is transparent and testable. In production, I would add stronger entity and relationship extraction, likely with a model-assisted extraction pipeline plus human validation for critical domains.
 
-The answer generator is deterministic by default. That keeps local demos and tests network-free. The code includes an LLM adapter shape so a real model can be plugged in without changing the rest of the pipeline.
+The answer generator is deterministic by default. That keeps local demos and tests network-free. For production-style runs, the LLM provider can be switched to OpenAI without changing retrieval, compression, guardrails, or citation code.
 
 The self-healing workflow uses file-based review. That is simple and auditable. In production, I would move this into a reviewer UI or ticket workflow.
 

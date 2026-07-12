@@ -21,6 +21,7 @@ dev = [
 ]
 qdrant = ["qdrant-client>=1.12"]
 redis = ["redis>=5"]
+openai = ["openai>=1.0"]
 
 [project.scripts]
 enterprise-rag = "enterprise_rag.cli:main"

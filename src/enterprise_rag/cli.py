@@ -6,7 +6,9 @@ from pathlib import Path
 
 from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.cache.factory import create_cache
-from enterprise_rag.config import load_config
+from enterprise_rag.config import AppConfig, load_config
+from enterprise_rag.embeddings.base import EmbeddingModel
+from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.evaluation.eval_generation import (
     generate_eval_cases_from_logs,
     promote_reviewed_eval_draft,
@@ -33,9 +35,11 @@ from enterprise_rag.ingestion.sync_manifest import JsonSourceSyncManifestStore
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.leases.factory import create_lease_store
+from enterprise_rag.llm.factory import create_llm_client
 from enterprise_rag.observability.log_analysis import analyze_query_log, format_log_analysis_report
 from enterprise_rag.observability.query_logging import QueryLogger, build_query_log_record
 from enterprise_rag.observability.tracing import format_query_trace
+from enterprise_rag.rag.answer_generation import AnswerGenerator, LLMAnswerGenerator
 from enterprise_rag.rag.citations import CitationFormatter
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.storage.index_version import JsonIndexVersionStore
@@ -45,6 +49,12 @@ from enterprise_rag.vector_index.factory import create_vector_index
 
 DEFAULT_INDEX = Path("data/processed/chunks.json")
 DEFAULT_JOBS = Path("data/jobs/ingest_jobs.json")
+
+
+def _answer_generator_for_config(config: AppConfig) -> AnswerGenerator | None:
+    if config.llm.provider.lower() == "stub":
+        return None
+    return LLMAnswerGenerator(create_llm_client(config.llm))
 
 
 def main() -> None:
@@ -200,6 +210,8 @@ def main() -> None:
             create_vector_index(config.vector_index),
             create_cache(config.cache),
             config.cache.embedding_ttl_seconds,
+            create_embedding_model(config.embedding),
+            _answer_generator_for_config(config),
         )
     elif args.command == "eval":
         config = load_config(args.config)
@@ -268,6 +280,7 @@ def ingest(
         chunks_by_id = {chunk.id: chunk for chunk in store.load()}
         chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
         sync_report = VectorIndexSync(
+            embedding_model=create_embedding_model(config.embedding),
             embedding_cache=embedding_cache,
             embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
         ).sync(
@@ -358,6 +371,8 @@ def query(
     vector_index: VectorIndex | None = None,
     embedding_cache: CacheStore | None = None,
     embedding_ttl_seconds: int | None = 86_400,
+    embedding_model: EmbeddingModel | None = None,
+    answer_generator: AnswerGenerator | None = None,
 ) -> None:
     chunks = JsonChunkStore(index_path).load()
     if not chunks:
@@ -368,8 +383,10 @@ def query(
         enable_graph=enable_graph,
         graph_max_hops=graph_max_hops,
         vector_index=vector_index,
+        embedding_model=embedding_model,
         embedding_cache=embedding_cache,
         embedding_ttl_seconds=embedding_ttl_seconds,
+        answer_generator=answer_generator,
     )
     answer, trace = pipeline.answer_for_user_with_trace(
         query_text,

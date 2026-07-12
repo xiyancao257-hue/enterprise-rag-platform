@@ -8,6 +8,7 @@ from uuid import uuid4
 from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.cache.in_memory import InMemoryCache
 from enterprise_rag.config import AppConfig
+from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
 from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter, create_pdf_page_renderer
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
@@ -122,6 +123,7 @@ class IngestJobRunner:
                 chunks_by_id = {chunk.id: chunk for chunk in store.load()}
                 chunks_to_upsert = [chunks_by_id[id] for id in report.chunks_upserted if id in chunks_by_id]
                 sync_report = VectorIndexSync(
+                    embedding_model=create_embedding_model(self.config.embedding),
                     embedding_cache=self.embedding_cache,
                     embedding_ttl_seconds=self.embedding_ttl_seconds,
                 ).sync(

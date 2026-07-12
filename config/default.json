@@ -71,6 +71,11 @@
     "input_cost_per_1k_tokens": 0.0,
     "output_cost_per_1k_tokens": 0.0
   },
+  "embedding": {
+    "provider": "hashing",
+    "model": "text-embedding-3-small",
+    "dimensions": 384
+  },
   "guardrails": {
     "min_citations": 1,
     "min_top_score": 0.01,

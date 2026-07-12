@@ -225,7 +225,7 @@ Query planning:
 Retrieval:
 
 - `retrieval/bm25.py` handles exact keywords, product names, and error codes.
-- `retrieval/vector.py` handles semantic similarity with a deterministic local embedding model.
+- `retrieval/vector.py` handles semantic similarity with a configurable embedding model.
 - `retrieval/graph.py` expands entity relationships through a lightweight knowledge graph.
 - `retrieval/hybrid.py` combines retrievers with reciprocal rank fusion.
 
@@ -282,11 +282,32 @@ enterprise-rag readiness-report \
 
 It reports index presence, chunk count, eval metrics, query-log health, self-healing artifacts, and recommendations.
 
-## LLM Adapter
+## OpenAI Provider Integration
 
-The default answer generator is deterministic, so tests and local demos do not require network access.
-The project also includes an `OpenAIClient` adapter stub at `src/enterprise_rag/llm/openai_client.py`.
-It implements the same `complete(prompt: str) -> str` shape expected by `LLMAnswerGenerator`, but intentionally raises a configuration error until a real SDK-backed implementation is added.
+The default answer generator and embedding model are deterministic, so tests and local demos do not require network access.
+For production-style runs, install the optional OpenAI dependency and switch config providers.
+
+```bash
+uv sync --extra openai
+export OPENAI_API_KEY="..."
+```
+
+```json
+{
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+  },
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small"
+  }
+}
+```
+
+`llm.provider = "openai"` routes grounded answer generation through `OpenAIClient`.
+`embedding.provider = "openai"` routes vector retrieval and vector-index sync through `OpenAIEmbeddingModel`.
+Tests keep using `llm.provider = "stub"` and `embedding.provider = "hashing"` for deterministic behavior.
 
 ```python
 from enterprise_rag.llm import OpenAIClient

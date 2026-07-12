@@ -18,16 +18,19 @@ from pydantic import BaseModel, Field
 from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
 from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config, load_config_from_env
+from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.evaluation.readiness import ReadinessReport, build_readiness_report
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
 from enterprise_rag.jobs.queue import FastApiBackgroundTaskQueue, IngestJobQueue
 from enterprise_rag.jobs.runner import IngestJobRunner
 from enterprise_rag.leases.factory import create_lease_store
+from enterprise_rag.llm.factory import create_llm_client
 from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAuditLogger, NullAuditLogger
 from enterprise_rag.observability.costs import LLMCostEstimator
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
+from enterprise_rag.rag.answer_generation import LLMAnswerGenerator
 from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
@@ -507,8 +510,10 @@ def create_app(
             enable_graph=config.retrieval.enable_graph,
             graph_max_hops=config.retrieval.graph_max_hops,
             vector_index=create_vector_index(config.vector_index),
+            embedding_model=create_embedding_model(config.embedding),
             embedding_cache=app.state.embedding_cache,
             embedding_ttl_seconds=config.cache.embedding_ttl_seconds,
+            answer_generator=_answer_generator_for_config(config),
         )
         answer, trace = pipeline.answer_for_user_with_trace(
             payload.query,
@@ -695,6 +700,12 @@ def create_app(
 
 
 app = create_app(config=load_config_from_env())
+
+
+def _answer_generator_for_config(config: AppConfig) -> LLMAnswerGenerator | None:
+    if config.llm.provider.lower() == "stub":
+        return None
+    return LLMAnswerGenerator(create_llm_client(config.llm))
 
 
 def _get_tenant_scoped_ingest_job(

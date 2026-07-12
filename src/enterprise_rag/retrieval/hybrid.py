@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Protocol
 
 from enterprise_rag.cache.base import CacheStore
+from enterprise_rag.embeddings.base import EmbeddingModel
 from enterprise_rag.models import Chunk, SearchHit
 from enterprise_rag.retrieval.bm25 import BM25Retriever
 from enterprise_rag.retrieval.filters import MetadataFilter
@@ -22,6 +23,7 @@ class HybridRetriever:
         chunks: list[Chunk],
         extra_retrievers: list[SingleQueryRetriever] | None = None,
         vector_index: VectorIndex | None = None,
+        embedding_model: EmbeddingModel | None = None,
         embedding_cache: CacheStore | None = None,
         embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
@@ -29,6 +31,7 @@ class HybridRetriever:
         self.bm25 = BM25Retriever(chunks)
         self.vector = HashingVectorRetriever(
             chunks,
+            embedding_model=embedding_model,
             vector_index=vector_index,
             embedding_cache=embedding_cache,
             embedding_ttl_seconds=embedding_ttl_seconds,

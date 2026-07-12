@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enterprise_rag.cache.base import CacheStore
+from enterprise_rag.embeddings.base import EmbeddingModel
 from enterprise_rag.graph.knowledge_graph import KnowledgeGraphBuilder
 from enterprise_rag.models import Chunk, RagAnswer
 from enterprise_rag.observability.tracing import QueryTrace, trace_hits
@@ -26,6 +27,7 @@ class RagPipeline:
         enable_graph: bool = False,
         graph_max_hops: int = 2,
         vector_index: VectorIndex | None = None,
+        embedding_model: EmbeddingModel | None = None,
         embedding_cache: CacheStore | None = None,
         embedding_ttl_seconds: int | None = 86_400,
     ) -> None:
@@ -39,6 +41,7 @@ class RagPipeline:
             chunks,
             extra_retrievers=extra_retrievers,
             vector_index=vector_index,
+            embedding_model=embedding_model,
             embedding_cache=embedding_cache,
             embedding_ttl_seconds=embedding_ttl_seconds,
         )
