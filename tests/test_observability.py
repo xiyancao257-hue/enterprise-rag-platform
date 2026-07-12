@@ -22,6 +22,12 @@ def test_pipeline_returns_query_trace() -> None:
     assert trace.reranked[0].chunk_id == "hybrid"
     assert trace.final_context[0].chunk_id == "hybrid"
     assert trace.final_context[0].source_path == "memory.md"
+    assert trace.timings_ms["query_planning"] >= 0
+    assert trace.timings_ms["retrieval"] >= 0
+    assert trace.timings_ms["rerank"] >= 0
+    assert trace.timings_ms["compression"] >= 0
+    assert trace.timings_ms["generation"] >= 0
+    assert trace.timings_ms["total"] >= 0
 
 
 def test_format_query_trace_includes_stage_summaries() -> None:
@@ -38,6 +44,8 @@ def test_format_query_trace_includes_stage_summaries() -> None:
     formatted = format_query_trace(trace)
 
     assert "Trace" in formatted
+    assert "Timings" in formatted
+    assert "query_planning" in formatted
     assert "Retrieved" in formatted
     assert "Reranked" in formatted
     assert "Blocked context" in formatted

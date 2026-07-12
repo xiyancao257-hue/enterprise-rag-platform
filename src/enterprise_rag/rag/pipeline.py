@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.embeddings.base import EmbeddingModel
 from enterprise_rag.graph.knowledge_graph import KnowledgeGraphBuilder
@@ -64,30 +66,57 @@ class RagPipeline:
         user_groups: set[str] | None = None,
         mandatory_metadata_filters: dict[str, str] | None = None,
     ) -> tuple[RagAnswer, QueryTrace]:
+        total_started_at = time.perf_counter()
+        timings_ms: dict[str, float] = {}
+
+        stage_started_at = time.perf_counter()
         plan = self.query_engine.plan(query)
+        timings_ms["query_planning"] = _elapsed_ms(stage_started_at)
+
         metadata_filters = {
             **plan.metadata_filters,
             **(mandatory_metadata_filters or {}),
         }
+        stage_started_at = time.perf_counter()
         retrieved = self.retriever.search(
             list(plan.rewritten_queries),
             top_k=max(top_k * 2, 8),
             metadata_filters=metadata_filters,
             user_groups=user_groups,
         )
+        timings_ms["retrieval"] = _elapsed_ms(stage_started_at)
+
+        stage_started_at = time.perf_counter()
         reranked = self.reranker.rerank(plan.normalized_query, retrieved, top_k=top_k)
+        timings_ms["rerank"] = _elapsed_ms(stage_started_at)
+
+        stage_started_at = time.perf_counter()
         prompt_security = self.prompt_injection_detector.filter_hits(reranked)
+        timings_ms["prompt_security"] = _elapsed_ms(stage_started_at)
+
+        stage_started_at = time.perf_counter()
         compressed = self.compressor.compress(plan.normalized_query, prompt_security.safe_hits)
+        timings_ms["compression"] = _elapsed_ms(stage_started_at)
+
+        stage_started_at = time.perf_counter()
         answer_text = self.answer_generator.generate(plan.normalized_query, compressed)
+        timings_ms["generation"] = _elapsed_ms(stage_started_at)
+        timings_ms["total"] = _elapsed_ms(total_started_at)
+
         answer = RagAnswer(query=query, answer=answer_text, citations=tuple(compressed), query_plan=plan)
         trace = QueryTrace(
             original_query=plan.original_query,
             normalized_query=plan.normalized_query,
             rewritten_queries=plan.rewritten_queries,
             metadata_filters=metadata_filters,
+            timings_ms=timings_ms,
             retrieved=trace_hits(retrieved),
             reranked=trace_hits(reranked),
             blocked_context=trace_hits(prompt_security.blocked_hits),
             final_context=trace_hits(compressed),
         )
         return answer, trace
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 4)

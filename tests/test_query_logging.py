@@ -40,6 +40,8 @@ def test_build_query_log_record_summarizes_trace() -> None:
     assert record.user_groups == ("engineering",)
     assert record.retrieved_chunk_ids == ("auth",)
     assert record.final_chunk_ids == ("auth",)
+    assert record.timings_ms["retrieval"] >= 0
+    assert record.timings_ms["generation"] >= 0
     assert record.insufficient_evidence is False
 
 
@@ -73,3 +75,4 @@ def test_query_logger_writes_jsonl(tmp_path) -> None:
     assert data["enable_graph"] is True
     assert data["graph_max_hops"] == 3
     assert data["index_version"] == "idx-jsonl"
+    assert data["timings_ms"]["retrieval"] >= 0

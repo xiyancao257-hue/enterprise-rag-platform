@@ -92,6 +92,8 @@ class MetricsCollector:
         self.query_estimated_cost_usd_sum = 0.0
         self.query_cache_hits_total = 0
         self.query_cache_misses_total = 0
+        self.query_stage_latency_ms_sum: dict[str, float] = {}
+        self.query_stage_latency_ms_count: dict[str, int] = {}
         self.ingest_jobs_total = 0
         self.ingest_job_success_total = 0
         self.ingest_job_failures_total = 0
@@ -126,6 +128,11 @@ class MetricsCollector:
 
     def record_query_cache_miss(self) -> None:
         self.query_cache_misses_total += 1
+
+    def record_query_stage_timings(self, timings_ms: dict[str, float]) -> None:
+        for stage, latency_ms in timings_ms.items():
+            self.query_stage_latency_ms_sum[stage] = self.query_stage_latency_ms_sum.get(stage, 0.0) + latency_ms
+            self.query_stage_latency_ms_count[stage] = self.query_stage_latency_ms_count.get(stage, 0) + 1
 
     def record_ingest_job_created(self) -> None:
         self.ingest_jobs_total += 1
@@ -176,6 +183,10 @@ class MetricsCollector:
         }
         for reason, count in sorted(self.ingest_job_skips_by_reason.items()):
             metrics[f"enterprise_rag_ingest_job_skipped_reason_{_metric_suffix(reason)}_total"] = count
+        for stage, latency_sum in sorted(self.query_stage_latency_ms_sum.items()):
+            suffix = _metric_suffix(stage)
+            metrics[f"enterprise_rag_query_stage_{suffix}_latency_ms_sum"] = round(latency_sum, 4)
+            metrics[f"enterprise_rag_query_stage_{suffix}_latency_ms_count"] = self.query_stage_latency_ms_count[stage]
         return "\n".join(f"{name} {value}" for name, value in metrics.items()) + "\n"
 
 
@@ -228,6 +239,7 @@ class QueryTraceResponse(BaseModel):
     normalized_query: str
     rewritten_queries: list[str]
     metadata_filters: dict[str, str]
+    timings_ms: dict[str, float] = Field(default_factory=dict)
     retrieved: list[TraceHitResponse]
     reranked: list[TraceHitResponse]
     blocked_context: list[TraceHitResponse]
@@ -523,6 +535,7 @@ def create_app(
         )
         latency_ms = (time.perf_counter() - started_at) * 1000
         app.state.metrics.record_query_success(latency_ms=latency_ms, citation_count=len(answer.citations))
+        app.state.metrics.record_query_stage_timings(trace.timings_ms)
         cost = LLMCostEstimator(config.llm).estimate(
             prompt=_cost_prompt_approximation(payload.query, answer.citations),
             completion=answer.answer,
@@ -552,6 +565,7 @@ def create_app(
             estimated_input_tokens=cost.input_tokens,
             estimated_output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
+            query_stage_timings_ms=trace.timings_ms,
             needs_human_review=guardrails.needs_human_review,
             human_review_reasons=list(guardrails.reasons),
         )
@@ -835,6 +849,7 @@ def _trace_response(trace: QueryTrace) -> QueryTraceResponse:
         normalized_query=trace.normalized_query,
         rewritten_queries=list(trace.rewritten_queries),
         metadata_filters=trace.metadata_filters,
+        timings_ms=trace.timings_ms,
         retrieved=[_trace_hit_response(hit) for hit in trace.retrieved],
         reranked=[_trace_hit_response(hit) for hit in trace.reranked],
         blocked_context=[_trace_hit_response(hit) for hit in trace.blocked_context],

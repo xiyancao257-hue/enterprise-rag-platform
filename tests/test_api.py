@@ -370,6 +370,11 @@ def test_metrics_reports_http_query_and_failure_counts(tmp_path) -> None:
     assert "enterprise_rag_query_estimated_cost_usd_sum" in metrics
     assert "enterprise_rag_query_cache_hits_total 0" in metrics
     assert "enterprise_rag_query_cache_misses_total 1" in metrics
+    assert "enterprise_rag_query_stage_query_planning_latency_ms_count 1" in metrics
+    assert "enterprise_rag_query_stage_retrieval_latency_ms_count 1" in metrics
+    assert "enterprise_rag_query_stage_rerank_latency_ms_count 1" in metrics
+    assert "enterprise_rag_query_stage_compression_latency_ms_count 1" in metrics
+    assert "enterprise_rag_query_stage_generation_latency_ms_count 1" in metrics
 
 
 def test_metrics_records_failed_query(tmp_path) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from enterprise_rag.models import SearchHit
 
@@ -22,6 +22,7 @@ class QueryTrace:
     normalized_query: str
     rewritten_queries: tuple[str, ...]
     metadata_filters: dict[str, str]
+    timings_ms: dict[str, float] = field(default_factory=dict)
     retrieved: tuple[TraceHit, ...] = ()
     reranked: tuple[TraceHit, ...] = ()
     blocked_context: tuple[TraceHit, ...] = ()
@@ -52,6 +53,10 @@ def format_query_trace(trace: QueryTrace) -> str:
     ]
     if trace.metadata_filters:
         lines.append(f"- metadata filters: {trace.metadata_filters}")
+    if trace.timings_ms:
+        lines.extend(["", "Timings"])
+        for stage, latency_ms in sorted(trace.timings_ms.items()):
+            lines.append(f"- {stage}: {latency_ms:.4f}ms")
 
     lines.extend(
         [

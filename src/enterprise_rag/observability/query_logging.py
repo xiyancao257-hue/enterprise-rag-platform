@@ -25,6 +25,7 @@ class QueryLogRecord:
     user_groups: tuple[str, ...]
     retrieved_chunk_ids: tuple[str, ...]
     final_chunk_ids: tuple[str, ...]
+    timings_ms: dict[str, float]
     insufficient_evidence: bool
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +42,7 @@ class QueryLogRecord:
             "user_groups": list(self.user_groups),
             "retrieved_chunk_ids": list(self.retrieved_chunk_ids),
             "final_chunk_ids": list(self.final_chunk_ids),
+            "timings_ms": self.timings_ms,
             "insufficient_evidence": self.insufficient_evidence,
         }
 
@@ -77,5 +79,6 @@ def build_query_log_record(
         user_groups=tuple(sorted(user_groups or set())),
         retrieved_chunk_ids=tuple(hit.chunk_id for hit in trace.retrieved),
         final_chunk_ids=tuple(hit.chunk_id for hit in trace.final_context),
+        timings_ms=trace.timings_ms,
         insufficient_evidence=answer.answer == INSUFFICIENT_EVIDENCE_MESSAGE,
     )
