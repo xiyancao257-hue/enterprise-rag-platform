@@ -28,6 +28,14 @@ Scanned PDFs and images route through the OCR adapter interface; OCR is disabled
 ## CLI Demo
 
 ```bash
+scripts/demo.sh
+```
+
+The demo script runs isolated local artifacts under `data/demo/`: ingestion, traced query, retrieval eval, top-k experiment, and readiness report.
+
+Manual CLI flow:
+
+```bash
 enterprise-rag ingest data/raw
 
 enterprise-rag query "What does AUTH-429 affect?" \
@@ -170,6 +178,8 @@ curl -X POST http://localhost:8000/query \
 ```
 
 ## Current Architecture
+
+For the full system diagram and interview walkthrough, see [`docs/architecture.md`](docs/architecture.md).
 
 ```text
 Raw Documents
