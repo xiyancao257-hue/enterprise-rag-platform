@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enterprise_rag.config import OcrConfig
-from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, UnconfiguredOcrAdapter
+from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, TesseractOcrAdapter, UnconfiguredOcrAdapter
 
 
 def create_ocr_adapter(config: OcrConfig) -> OcrAdapter:
@@ -9,9 +9,9 @@ def create_ocr_adapter(config: OcrConfig) -> OcrAdapter:
     if provider in {"disabled", "none", ""}:
         return DisabledOcrAdapter()
     if provider == "tesseract":
-        return UnconfiguredOcrAdapter(
-            provider=provider,
-            setup_hint=f"Install Tesseract and wire a subprocess adapter using `{config.tesseract_cmd}`.",
+        return TesseractOcrAdapter(
+            command=config.tesseract_cmd,
+            timeout_seconds=config.tesseract_timeout_seconds,
         )
     if provider == "aws_textract":
         region_hint = f" in region `{config.aws_region}`" if config.aws_region else ""

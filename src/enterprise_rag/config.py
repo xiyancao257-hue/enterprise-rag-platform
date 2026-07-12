@@ -60,6 +60,7 @@ class IngestionConfig:
 class OcrConfig:
     provider: str = "disabled"
     tesseract_cmd: str = "tesseract"
+    tesseract_timeout_seconds: float = 30.0
     aws_region: str = ""
     azure_endpoint_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
     azure_key_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_KEY"
@@ -225,6 +226,9 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
         ocr=OcrConfig(
             provider=str(ocr_data.get("provider", OcrConfig.provider)),
             tesseract_cmd=str(ocr_data.get("tesseract_cmd", OcrConfig.tesseract_cmd)),
+            tesseract_timeout_seconds=float(
+                ocr_data.get("tesseract_timeout_seconds", OcrConfig.tesseract_timeout_seconds)
+            ),
             aws_region=str(ocr_data.get("aws_region", OcrConfig.aws_region)),
             azure_endpoint_env_var=str(ocr_data.get("azure_endpoint_env_var", OcrConfig.azure_endpoint_env_var)),
             azure_key_env_var=str(ocr_data.get("azure_key_env_var", OcrConfig.azure_key_env_var)),

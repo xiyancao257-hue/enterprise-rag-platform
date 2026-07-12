@@ -56,6 +56,7 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
             "ocr": {
                 "provider": "tesseract",
                 "tesseract_cmd": "/opt/bin/tesseract",
+                "tesseract_timeout_seconds": 12.5,
                 "aws_region": "us-west-2",
                 "azure_endpoint_env_var": "AZURE_DI_ENDPOINT",
                 "azure_key_env_var": "AZURE_DI_KEY",
@@ -127,6 +128,7 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.ingestion.max_file_bytes == 2048
     assert config.ocr.provider == "tesseract"
     assert config.ocr.tesseract_cmd == "/opt/bin/tesseract"
+    assert config.ocr.tesseract_timeout_seconds == 12.5
     assert config.ocr.aws_region == "us-west-2"
     assert config.ocr.azure_endpoint_env_var == "AZURE_DI_ENDPOINT"
     assert config.ocr.azure_key_env_var == "AZURE_DI_KEY"
