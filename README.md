@@ -55,6 +55,17 @@ Or with Docker Compose:
 docker compose up api
 ```
 
+Production-style Compose wiring:
+
+```bash
+export ENTERPRISE_RAG_API_KEY="replace-with-real-api-key"
+export ENTERPRISE_RAG_API_KEYS="$ENTERPRISE_RAG_API_KEY"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis
+```
+
+This uses `config/production.example.json`, Qdrant, Redis cache, Redis leases, persistent app data,
+API key auth, audit logging, and guardrail budgets.
+
 Health check:
 
 ```bash
@@ -97,6 +108,9 @@ retrieval depth, graph expansion, and default access groups without changing app
 `config/production.example.json` shows a production-style setup with Qdrant, Redis cache, Redis leases,
 API key auth, audit logging, ingestion source allowlists, and latency/cost/human-review guardrails.
 It is intentionally an example file: replace placeholder hashes and tune budgets before using it.
+For local production-style demos, `ENTERPRISE_RAG_API_KEYS` can provide comma-separated raw API keys.
+For stricter tenant-scoped production auth, replace `api_security.api_keys[].key_hash` with a SHA-256 hash
+and configure its `allowed_tenants`.
 
 Generate a SHA-256 API key hash:
 
@@ -114,6 +128,14 @@ enterprise-rag readiness-report \
   --query-log data/logs/query_log.jsonl \
   --self-healing-dir data/eval/self_healing \
   --k 5
+```
+
+Or through the production-style API:
+
+```bash
+curl http://localhost:8000/readiness \
+  -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
+  -H "X-Tenant-ID: acme"
 ```
 
 When API key auth is enabled, protected API calls also require `X-Tenant-ID`:

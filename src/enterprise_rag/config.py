@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,13 @@ def load_config(path: Path | None = None) -> AppConfig:
         raise ValueError("Config file must contain a JSON object.")
 
     return parse_config(data)
+
+
+def load_config_from_env(env_var: str = "ENTERPRISE_RAG_CONFIG") -> AppConfig:
+    config_path = os.environ.get(env_var)
+    if not config_path:
+        return load_config()
+    return load_config(Path(config_path))
 
 
 def parse_config(data: dict[str, Any]) -> AppConfig:

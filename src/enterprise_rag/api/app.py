@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from enterprise_rag.cache.factory import create_cache
 from enterprise_rag.cache.query import build_query_cache_key
-from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config
+from enterprise_rag.config import ApiKeyCredential, AppConfig, load_config, load_config_from_env
 from enterprise_rag.evaluation.readiness import ReadinessReport, build_readiness_report
 from enterprise_rag.ingestion.pipeline import IngestReport
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore, InMemoryIngestJobStore
@@ -683,7 +683,7 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(config=load_config_from_env())
 
 
 def _get_tenant_scoped_ingest_job(

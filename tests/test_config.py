@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from enterprise_rag.config import AppConfig, load_config, parse_config
+from enterprise_rag.config import AppConfig, load_config, load_config_from_env, parse_config
 
 
 def test_load_config_without_path_uses_defaults() -> None:
@@ -151,6 +151,16 @@ def test_load_config_from_json_file(tmp_path) -> None:
     assert config.retrieval.enable_graph is True
     assert config.retrieval.graph_max_hops == 2
     assert config.security.default_user_groups == ("admin",)
+
+
+def test_load_config_from_env_uses_config_path(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "enterprise-rag.json"
+    config_path.write_text('{"retrieval": {"top_k": 9}}', encoding="utf-8")
+    monkeypatch.setenv("ENTERPRISE_RAG_CONFIG", str(config_path))
+
+    config = load_config_from_env()
+
+    assert config.retrieval.top_k == 9
 
 
 def test_production_example_config_loads() -> None:

@@ -1,0 +1,43 @@
+services:
+  api:
+    environment:
+      ENTERPRISE_RAG_CONFIG: config/production.example.json
+      ENTERPRISE_RAG_API_KEYS: ${ENTERPRISE_RAG_API_KEYS:-}
+    command: ["enterprise-rag-api"]
+    depends_on:
+      - qdrant
+      - redis
+    volumes:
+      - enterprise_rag_data:/app/data
+
+  worker:
+    environment:
+      ENTERPRISE_RAG_CONFIG: config/production.example.json
+    command:
+      [
+        "enterprise-rag",
+        "worker",
+        "--jobs",
+        "data/jobs/ingest_jobs.json",
+        "--index",
+        "data/processed/chunks.json",
+        "--config",
+        "config/production.example.json",
+      ]
+    depends_on:
+      - qdrant
+      - redis
+    volumes:
+      - enterprise_rag_data:/app/data
+
+  enterprise-rag:
+    environment:
+      ENTERPRISE_RAG_CONFIG: config/production.example.json
+    depends_on:
+      - qdrant
+      - redis
+    volumes:
+      - enterprise_rag_data:/app/data
+
+volumes:
+  enterprise_rag_data:
