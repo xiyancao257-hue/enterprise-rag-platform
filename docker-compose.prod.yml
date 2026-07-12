@@ -49,5 +49,25 @@ services:
     volumes:
       - enterprise_rag_data:/app/data
 
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--config.expand-env",
+        "--storage.tsdb.path=/prometheus",
+      ]
+    environment:
+      ENTERPRISE_RAG_API_KEY: ${ENTERPRISE_RAG_API_KEY:-}
+    depends_on:
+      - api
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+
 volumes:
   enterprise_rag_data:
+  prometheus_data:

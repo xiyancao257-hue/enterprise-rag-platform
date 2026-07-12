@@ -77,11 +77,12 @@ Production-style Compose wiring:
 ```bash
 cp .env.example .env
 # Edit .env and replace ENTERPRISE_RAG_API_KEY / ENTERPRISE_RAG_API_KEYS.
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis prometheus
 ```
 
 This uses `config/production.example.json`, Qdrant, Redis cache, Redis leases, persistent app data,
-API key auth, audit logging, provider retry/circuit-breaker settings, and guardrail budgets.
+API key auth, audit logging, provider retry/circuit-breaker settings, guardrail budgets, and
+Prometheus monitoring.
 
 Health check:
 
@@ -180,6 +181,27 @@ curl http://localhost:8000/admin/ops/status \
   -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
   -H "X-Tenant-ID: acme"
 ```
+
+Metrics endpoint:
+
+```bash
+curl http://localhost:8000/metrics \
+  -H "Authorization: Bearer $ENTERPRISE_RAG_API_KEY"
+```
+
+The production Compose stack starts Prometheus on `http://localhost:9090`. Prometheus loads
+`monitoring/prometheus.yml`, expands `ENTERPRISE_RAG_API_KEY` from the container environment, and scrapes
+the protected API `/metrics` endpoint. Alert examples live in `monitoring/alerts.yml` for query failures,
+high average query latency, and ingest job failures.
+
+Useful production RAG metrics include:
+
+- `enterprise_rag_query_latency_ms_sum` / `enterprise_rag_query_latency_ms_count`
+- `enterprise_rag_query_failures_total`
+- `enterprise_rag_query_cache_hits_total` and `enterprise_rag_query_cache_misses_total`
+- `enterprise_rag_query_estimated_cost_usd_sum`
+- `enterprise_rag_ingest_job_failures_total`
+- `enterprise_rag_feedback_total`
 
 When API key auth is enabled, protected API calls also require `X-Tenant-ID`:
 

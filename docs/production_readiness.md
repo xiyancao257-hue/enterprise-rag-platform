@@ -230,18 +230,26 @@ rag_eval_precision_at_k
 rag_self_healing_candidates_total
 ```
 
-Initial implementation can export Prometheus text format.
+The API exports Prometheus text format.
 
-Future API:
+API:
 
 ```text
 GET /metrics
 ```
 
-Future stack:
+Implemented stack:
 
 ```text
 Prometheus -> Grafana -> alerts
+```
+
+Project files:
+
+```text
+monitoring/prometheus.yml
+monitoring/alerts.yml
+docker-compose.prod.yml
 ```
 
 ## 7. CI/CD

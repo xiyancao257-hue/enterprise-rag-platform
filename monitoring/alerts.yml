@@ -1,0 +1,29 @@
+groups:
+  - name: enterprise-rag.rules
+    rules:
+      - alert: EnterpriseRagQueryFailures
+        expr: increase(enterprise_rag_query_failures_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Enterprise RAG query failures detected
+          description: Query failures increased in the last 5 minutes.
+
+      - alert: EnterpriseRagHighAverageQueryLatency
+        expr: increase(enterprise_rag_query_latency_ms_sum[5m]) / clamp_min(increase(enterprise_rag_query_latency_ms_count[5m]), 1) > 3000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Enterprise RAG average query latency is high
+          description: Average query latency is above 3000 ms over the last 5 minutes.
+
+      - alert: EnterpriseRagIngestJobFailures
+        expr: increase(enterprise_rag_ingest_job_failures_total[10m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Enterprise RAG ingest job failures detected
+          description: Ingest job failures increased in the last 10 minutes.
