@@ -64,6 +64,16 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class GuardrailsConfig:
+    min_citations: int = 1
+    min_top_score: float = 0.01
+    min_evidence_tokens: int = 5
+    max_estimated_cost_usd: float = 0.0
+    max_latency_ms: float = 0.0
+    sensitive_terms: tuple[str, ...] = ("legal", "medical", "finance", "security", "compliance")
+
+
+@dataclass(frozen=True)
 class AuditConfig:
     enabled: bool = False
     path: str = "data/audit/audit.jsonl"
@@ -94,6 +104,7 @@ class AppConfig:
     jobs: JobsConfig = field(default_factory=JobsConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
     leases: LeaseConfig = field(default_factory=LeaseConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
@@ -118,6 +129,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     jobs_data = _section(data, "jobs")
     ingestion_data = _section(data, "ingestion")
     llm_data = _section(data, "llm")
+    guardrails_data = _section(data, "guardrails")
     audit_data = _section(data, "audit")
     leases_data = _section(data, "leases")
     cache_data = _section(data, "cache")
@@ -180,6 +192,18 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
             ),
             output_cost_per_1k_tokens=float(
                 llm_data.get("output_cost_per_1k_tokens", LLMConfig.output_cost_per_1k_tokens)
+            ),
+        ),
+        guardrails=GuardrailsConfig(
+            min_citations=int(guardrails_data.get("min_citations", GuardrailsConfig.min_citations)),
+            min_top_score=float(guardrails_data.get("min_top_score", GuardrailsConfig.min_top_score)),
+            min_evidence_tokens=int(guardrails_data.get("min_evidence_tokens", GuardrailsConfig.min_evidence_tokens)),
+            max_estimated_cost_usd=float(
+                guardrails_data.get("max_estimated_cost_usd", GuardrailsConfig.max_estimated_cost_usd)
+            ),
+            max_latency_ms=float(guardrails_data.get("max_latency_ms", GuardrailsConfig.max_latency_ms)),
+            sensitive_terms=tuple(
+                str(term).lower() for term in guardrails_data.get("sensitive_terms", GuardrailsConfig.sensitive_terms)
             ),
         ),
         audit=AuditConfig(

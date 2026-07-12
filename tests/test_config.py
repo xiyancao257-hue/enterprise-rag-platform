@@ -57,6 +57,14 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "input_cost_per_1k_tokens": 0.1,
                 "output_cost_per_1k_tokens": 0.2,
             },
+            "guardrails": {
+                "min_citations": 2,
+                "min_top_score": 0.25,
+                "min_evidence_tokens": 12,
+                "max_estimated_cost_usd": 0.05,
+                "max_latency_ms": 1500,
+                "sensitive_terms": ["legal", "finance"],
+            },
             "audit": {
                 "enabled": True,
                 "path": "data/audit/test.jsonl",
@@ -100,6 +108,12 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.llm.model == "gpt-test"
     assert config.llm.input_cost_per_1k_tokens == 0.1
     assert config.llm.output_cost_per_1k_tokens == 0.2
+    assert config.guardrails.min_citations == 2
+    assert config.guardrails.min_top_score == 0.25
+    assert config.guardrails.min_evidence_tokens == 12
+    assert config.guardrails.max_estimated_cost_usd == 0.05
+    assert config.guardrails.max_latency_ms == 1500
+    assert config.guardrails.sensitive_terms == ("legal", "finance")
     assert config.audit.enabled is True
     assert config.audit.path == "data/audit/test.jsonl"
     assert config.leases.provider == "redis"

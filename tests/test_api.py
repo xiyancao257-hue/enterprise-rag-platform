@@ -5,7 +5,14 @@ from hashlib import sha256
 from fastapi.testclient import TestClient
 
 from enterprise_rag.api.app import API_KEY_HEADER, REQUEST_ID_HEADER, TENANT_ID_HEADER, MetricsCollector, create_app
-from enterprise_rag.config import ApiKeyCredential, ApiSecurityConfig, AppConfig, IngestionConfig
+from enterprise_rag.config import (
+    ApiKeyCredential,
+    ApiSecurityConfig,
+    AppConfig,
+    GuardrailsConfig,
+    IngestionConfig,
+    LLMConfig,
+)
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
 from enterprise_rag.observability.audit import JsonAuditLogger
@@ -100,6 +107,10 @@ def test_query_returns_answer_plan_citations_and_request_id(tmp_path, caplog) ->
     assert "BM25" in payload["answer"]
     assert payload["query_plan"]["corrections"] == {"retrival": "retrieval"}
     assert payload["citations"][0]["chunk_id"] == "hybrid"
+    assert payload["latency_ms"] >= 0
+    assert payload["cost"]["input_tokens"] > 0
+    assert payload["cost"]["output_tokens"] > 0
+    assert payload["guardrails"] == {"needs_human_review": False, "reasons": []}
     assert payload["trace"]["retrieved"]
     events = [json.loads(record.message) for record in caplog.records]
     query_completed = next(event for event in events if event["event"] == "query_completed")
@@ -141,6 +152,38 @@ def test_query_completed_writes_audit_event(tmp_path) -> None:
     assert audit_event["principal"] == "anonymous"
     assert audit_event["attributes"]["citation_chunk_ids"] == ["hybrid"]
     assert audit_event["attributes"]["user_groups"] == ["engineering"]
+    assert audit_event["attributes"]["needs_human_review"] is False
+    assert audit_event["attributes"]["human_review_reasons"] == []
+
+
+def test_query_guardrails_flag_human_review_for_cost_and_sensitive_topic(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="legal",
+                document_id="doc1",
+                text="Legal retention policy explains enterprise compliance review and approval workflow.",
+            )
+        ]
+    )
+    client = TestClient(
+        create_app(
+            index_path=index_path,
+            config=AppConfig(
+                llm=LLMConfig(input_cost_per_1k_tokens=1.0, output_cost_per_1k_tokens=1.0),
+                guardrails=GuardrailsConfig(max_estimated_cost_usd=0.00001, sensitive_terms=("legal",)),
+            ),
+        )
+    )
+
+    response = client.post("/query", json={"query": "legal retention policy", "top_k": 1})
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["guardrails"]["needs_human_review"] is True
+    assert "cost_budget_exceeded" in payload["guardrails"]["reasons"]
+    assert "sensitive_topic" in payload["guardrails"]["reasons"]
 
 
 def test_query_cache_reuses_response_for_same_security_context(tmp_path) -> None:

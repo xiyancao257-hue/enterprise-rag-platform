@@ -28,6 +28,7 @@ from enterprise_rag.models import RagAnswer, SearchHit
 from enterprise_rag.observability.audit import AuditEvent, AuditLogger, JsonAuditLogger, NullAuditLogger
 from enterprise_rag.observability.costs import LLMCostEstimator
 from enterprise_rag.observability.tracing import QueryTrace, TraceHit
+from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
 from enterprise_rag.storage.json_store import JsonChunkStore
@@ -229,12 +230,26 @@ class QueryTraceResponse(BaseModel):
     final_context: list[TraceHitResponse]
 
 
+class CostResponse(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+
+
+class QueryGuardrailResponse(BaseModel):
+    needs_human_review: bool = False
+    reasons: list[str] = Field(default_factory=list)
+
+
 class QueryResponse(BaseModel):
     request_id: str
     tenant_id: str | None = None
     answer: str
     query_plan: QueryPlanResponse
     citations: list[CitationResponse]
+    latency_ms: float = 0.0
+    cost: CostResponse = Field(default_factory=CostResponse)
+    guardrails: QueryGuardrailResponse = Field(default_factory=QueryGuardrailResponse)
     trace: QueryTraceResponse | None = None
 
 
@@ -505,6 +520,12 @@ def create_app(
             output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
         )
+        guardrails = QueryGuardrailPolicy(config.guardrails).evaluate(
+            payload.query,
+            answer.citations,
+            cost,
+            latency_ms,
+        )
         _log_event(
             "query_completed",
             request_id=request.state.request_id,
@@ -518,6 +539,8 @@ def create_app(
             estimated_input_tokens=cost.input_tokens,
             estimated_output_tokens=cost.output_tokens,
             estimated_cost_usd=cost.estimated_cost_usd,
+            needs_human_review=guardrails.needs_human_review,
+            human_review_reasons=list(guardrails.reasons),
         )
         app.state.audit_logger.log(
             AuditEvent(
@@ -533,6 +556,8 @@ def create_app(
                     "estimated_input_tokens": cost.input_tokens,
                     "estimated_output_tokens": cost.output_tokens,
                     "estimated_cost_usd": cost.estimated_cost_usd,
+                    "needs_human_review": guardrails.needs_human_review,
+                    "human_review_reasons": list(guardrails.reasons),
                 },
             )
         )
@@ -541,8 +566,19 @@ def create_app(
             tenant_id,
             answer,
             trace if payload.include_trace else None,
+            latency_ms=latency_ms,
+            cost=cost,
+            guardrails=guardrails,
         )
-        cache_response = _query_response(request.state.request_id, tenant_id, answer, trace)
+        cache_response = _query_response(
+            request.state.request_id,
+            tenant_id,
+            answer,
+            trace,
+            latency_ms=latency_ms,
+            cost=cost,
+            guardrails=guardrails,
+        )
         app.state.query_cache.set(
             query_cache_key, cache_response.model_dump(), ttl_seconds=config.cache.query_ttl_seconds
         )
@@ -668,6 +704,9 @@ def _query_response(
     tenant_id: str | None,
     answer: RagAnswer,
     trace: QueryTrace | None,
+    latency_ms: float = 0.0,
+    cost: object | None = None,
+    guardrails: QueryGuardrailDecision | None = None,
 ) -> QueryResponse:
     return QueryResponse(
         request_id=request_id,
@@ -682,7 +721,29 @@ def _query_response(
             metadata_filters=answer.query_plan.metadata_filters,
         ),
         citations=[_citation_response(hit) for hit in answer.citations],
+        latency_ms=round(latency_ms, 2),
+        cost=_cost_response(cost),
+        guardrails=_guardrail_response(guardrails),
         trace=_trace_response(trace) if trace is not None else None,
+    )
+
+
+def _cost_response(cost: object | None) -> CostResponse:
+    if cost is None:
+        return CostResponse()
+    return CostResponse(
+        input_tokens=int(getattr(cost, "input_tokens", 0)),
+        output_tokens=int(getattr(cost, "output_tokens", 0)),
+        estimated_cost_usd=float(getattr(cost, "estimated_cost_usd", 0.0)),
+    )
+
+
+def _guardrail_response(guardrails: QueryGuardrailDecision | None) -> QueryGuardrailResponse:
+    if guardrails is None:
+        return QueryGuardrailResponse()
+    return QueryGuardrailResponse(
+        needs_human_review=guardrails.needs_human_review,
+        reasons=list(guardrails.reasons),
     )
 
 
