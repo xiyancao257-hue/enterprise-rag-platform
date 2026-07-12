@@ -34,7 +34,7 @@ from enterprise_rag.rag.answer_generation import LLMAnswerGenerator
 from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
-from enterprise_rag.storage.index_version import JsonIndexVersionStore
+from enterprise_rag.storage.index_version import IndexVersion, JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -333,6 +333,24 @@ class IngestJobResponse(BaseModel):
     error: str | None = None
 
 
+class IndexVersionResponse(BaseModel):
+    version_id: str
+    sequence: int
+    updated_at: str
+    reason: str
+    snapshot_path: str = ""
+
+
+class IndexRollbackRequest(BaseModel):
+    version_id: str = Field(min_length=1)
+
+
+class IndexRollbackResponse(BaseModel):
+    request_id: str
+    restored_from_version_id: str
+    active_version: IndexVersionResponse
+
+
 def _log_event(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}, sort_keys=True))
 
@@ -435,6 +453,33 @@ def create_app(
             k=k,
         )
         return _readiness_response(request.state.request_id, report)
+
+    @app.get("/admin/index/versions", response_model=list[IndexVersionResponse])
+    def list_index_versions(request: Request) -> list[IndexVersionResponse]:
+        _authorize_request(request, app.state.config)
+        return [_index_version_response(version) for version in app.state.index_version_store.history()]
+
+    @app.post("/admin/index/rollback", response_model=IndexRollbackResponse)
+    def rollback_index(payload: IndexRollbackRequest, request: Request) -> IndexRollbackResponse:
+        _authorize_request(request, app.state.config)
+        try:
+            version = app.state.index_version_store.rollback(
+                version_id=payload.version_id,
+                index_path=app.state.index_path,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _log_event(
+            "index_rollback_completed",
+            request_id=request.state.request_id,
+            restored_from_version_id=payload.version_id,
+            active_version_id=version.version_id,
+        )
+        return IndexRollbackResponse(
+            request_id=request.state.request_id,
+            restored_from_version_id=payload.version_id,
+            active_version=_index_version_response(version),
+        )
 
     @app.post("/query", response_model=QueryResponse)
     def query(payload: QueryRequest, request: Request) -> QueryResponse:
@@ -866,6 +911,16 @@ def _trace_hit_response(hit: TraceHit) -> TraceHitResponse:
         rank=hit.rank,
         heading_path=list(hit.heading_path),
         source_path=hit.source_path,
+    )
+
+
+def _index_version_response(version: IndexVersion) -> IndexVersionResponse:
+    return IndexVersionResponse(
+        version_id=version.version_id,
+        sequence=version.sequence,
+        updated_at=version.updated_at,
+        reason=version.reason,
+        snapshot_path=version.snapshot_path,
     )
 
 

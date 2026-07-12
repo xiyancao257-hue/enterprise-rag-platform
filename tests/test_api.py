@@ -236,6 +236,32 @@ def test_query_response_includes_index_version(tmp_path) -> None:
     assert response.json()["index_version"] == version.version_id
 
 
+def test_admin_index_rollback_restores_previous_snapshot(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    store = JsonChunkStore(index_path)
+    version_store = JsonIndexVersionStore(index_path.with_name("index_version.json"))
+    store.save([Chunk(id="old", document_id="doc1", text="Hybrid retrieval approved old index.")])
+    old_version = version_store.bump(reason="ingest", index_path=index_path)
+    store.save([Chunk(id="new", document_id="doc1", text="Graph retrieval bad new index.")])
+    new_version = version_store.bump(reason="ingest", index_path=index_path)
+    client = TestClient(create_app(index_path=index_path))
+
+    versions_response = client.get("/admin/index/versions")
+    rollback_response = client.post("/admin/index/rollback", json={"version_id": old_version.version_id})
+    query_response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    assert versions_response.status_code == 200
+    assert [item["version_id"] for item in versions_response.json()] == [old_version.version_id, new_version.version_id]
+    assert rollback_response.status_code == 200
+    rollback_payload = rollback_response.json()
+    assert rollback_payload["restored_from_version_id"] == old_version.version_id
+    assert rollback_payload["active_version"]["sequence"] == 3
+    assert rollback_payload["active_version"]["reason"] == f"rollback:{old_version.version_id}"
+    assert query_response.status_code == 200
+    assert query_response.json()["citations"][0]["chunk_id"] == "old"
+    assert query_response.json()["index_version"] == rollback_payload["active_version"]["version_id"]
+
+
 def test_query_cache_is_tenant_scoped(tmp_path) -> None:
     index_path = tmp_path / "chunks.json"
     JsonChunkStore(index_path).save(
