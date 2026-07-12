@@ -31,6 +31,7 @@ from enterprise_rag.observability.tracing import QueryTrace, TraceHit
 from enterprise_rag.rag.guardrails import QueryGuardrailDecision, QueryGuardrailPolicy
 from enterprise_rag.rag.pipeline import RagPipeline
 from enterprise_rag.rag.query_security import QueryGuard
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -244,6 +245,7 @@ class QueryGuardrailResponse(BaseModel):
 class QueryResponse(BaseModel):
     request_id: str
     tenant_id: str | None = None
+    index_version: str
     answer: str
     query_plan: QueryPlanResponse
     citations: list[CitationResponse]
@@ -293,6 +295,7 @@ class IngestReportResponse(BaseModel):
     chunks_indexed: int
     chunks_upserted: list[str]
     chunks_deleted: list[str]
+    index_version: str | None = None
     filtered_documents: list[dict[str, str]]
     dry_run: bool
 
@@ -334,6 +337,7 @@ def create_app(
     config = config or load_config(config_path)
     app = FastAPI(title="Enterprise RAG API", version="0.1.0")
     app.state.index_path = index_path
+    app.state.index_version_store = JsonIndexVersionStore(index_path.with_name("index_version.json"))
     app.state.config = config
     app.state.metrics = MetricsCollector()
     app.state.query_guard = QueryGuard()
@@ -468,6 +472,7 @@ def create_app(
         top_k = payload.top_k if payload.top_k is not None else config.retrieval.top_k
         user_groups = set(payload.user_groups) or set(config.security.default_user_groups)
         mandatory_metadata_filters = _tenant_metadata_filter(tenant_id)
+        index_version = app.state.index_version_store.current_id(app.state.index_path)
         query_cache_key = build_query_cache_key(
             query=payload.query,
             tenant_id=tenant_id,
@@ -475,6 +480,7 @@ def create_app(
             metadata_filters=mandatory_metadata_filters,
             top_k=top_k,
             index_path=app.state.index_path,
+            index_version_id=index_version,
             retrieval_profile=_query_cache_retrieval_profile(config),
         )
         cached_response = app.state.query_cache.get(query_cache_key)
@@ -485,6 +491,7 @@ def create_app(
                 request_id=request.state.request_id,
                 tenant_id=tenant_id,
                 top_k=top_k,
+                index_version=index_version,
             )
             return QueryResponse.model_validate(
                 {
@@ -535,6 +542,7 @@ def create_app(
             blocked_context_count=len(trace.blocked_context),
             include_trace=payload.include_trace,
             vector_index_provider=config.vector_index.provider,
+            index_version=index_version,
             tenant_id=tenant_id,
             estimated_input_tokens=cost.input_tokens,
             estimated_output_tokens=cost.output_tokens,
@@ -552,6 +560,7 @@ def create_app(
                     "top_k": top_k,
                     "query_length": len(payload.query),
                     "citation_chunk_ids": [hit.chunk.id for hit in answer.citations],
+                    "index_version": index_version,
                     "user_groups": payload.user_groups,
                     "estimated_input_tokens": cost.input_tokens,
                     "estimated_output_tokens": cost.output_tokens,
@@ -566,6 +575,7 @@ def create_app(
             tenant_id,
             answer,
             trace if payload.include_trace else None,
+            index_version=index_version,
             latency_ms=latency_ms,
             cost=cost,
             guardrails=guardrails,
@@ -575,6 +585,7 @@ def create_app(
             tenant_id,
             answer,
             trace,
+            index_version=index_version,
             latency_ms=latency_ms,
             cost=cost,
             guardrails=guardrails,
@@ -704,6 +715,7 @@ def _query_response(
     tenant_id: str | None,
     answer: RagAnswer,
     trace: QueryTrace | None,
+    index_version: str,
     latency_ms: float = 0.0,
     cost: object | None = None,
     guardrails: QueryGuardrailDecision | None = None,
@@ -711,6 +723,7 @@ def _query_response(
     return QueryResponse(
         request_id=request_id,
         tenant_id=tenant_id,
+        index_version=index_version,
         answer=answer.answer,
         query_plan=QueryPlanResponse(
             original_query=answer.query_plan.original_query,
@@ -862,6 +875,7 @@ def _ingest_report_response(report: IngestReport) -> IngestReportResponse:
         chunks_indexed=report.chunks_indexed,
         chunks_upserted=list(report.chunks_upserted),
         chunks_deleted=list(report.chunks_deleted),
+        index_version=report.index_version,
         filtered_documents=[
             {"source_path": item.source_path, "reason": item.reason} for item in report.filtered_documents
         ],

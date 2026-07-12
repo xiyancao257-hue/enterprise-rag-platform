@@ -16,6 +16,7 @@ from enterprise_rag.config import (
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
 from enterprise_rag.observability.audit import JsonAuditLogger
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -209,6 +210,30 @@ def test_query_cache_reuses_response_for_same_security_context(tmp_path) -> None
     assert second_response.json()["answer"] == first_response.json()["answer"]
     assert app.state.query_cache.hits == 1
     assert app.state.query_cache.misses == 1
+
+
+def test_query_response_includes_index_version(tmp_path) -> None:
+    index_path = tmp_path / "chunks.json"
+    JsonChunkStore(index_path).save(
+        [
+            Chunk(
+                id="hybrid",
+                document_id="doc1",
+                text="Hybrid retrieval combines BM25 keyword search with vector search.",
+            )
+        ]
+    )
+    version = JsonIndexVersionStore(index_path.with_name("index_version.json")).bump(
+        reason="test",
+        index_path=index_path,
+    )
+    app = create_app(index_path=index_path)
+    client = TestClient(app)
+
+    response = client.post("/query", json={"query": "hybrid retrieval", "top_k": 1})
+
+    assert response.status_code == 200
+    assert response.json()["index_version"] == version.version_id
 
 
 def test_query_cache_is_tenant_scoped(tmp_path) -> None:

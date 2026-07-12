@@ -29,12 +29,14 @@ def test_build_query_log_record_summarizes_trace() -> None:
         enable_graph=False,
         graph_max_hops=2,
         user_groups={"engineering"},
+        index_version="idx-test",
     )
 
     assert record.query == "Auth Service"
     assert record.normalized_query == "Auth Service"
     assert record.top_k == 1
     assert record.enable_graph is False
+    assert record.index_version == "idx-test"
     assert record.user_groups == ("engineering",)
     assert record.retrieved_chunk_ids == ("auth",)
     assert record.final_chunk_ids == ("auth",)
@@ -56,6 +58,7 @@ def test_query_logger_writes_jsonl(tmp_path) -> None:
         top_k=1,
         enable_graph=True,
         graph_max_hops=3,
+        index_version="idx-jsonl",
     )
     log_path = tmp_path / "logs" / "query_log.jsonl"
 
@@ -69,3 +72,4 @@ def test_query_logger_writes_jsonl(tmp_path) -> None:
     assert data["final_chunk_ids"] == ["policy"]
     assert data["enable_graph"] is True
     assert data["graph_max_hops"] == 3
+    assert data["index_version"] == "idx-jsonl"

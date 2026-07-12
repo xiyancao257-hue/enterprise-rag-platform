@@ -38,6 +38,7 @@ from enterprise_rag.observability.query_logging import QueryLogger, build_query_
 from enterprise_rag.observability.tracing import format_query_trace
 from enterprise_rag.rag.citations import CitationFormatter
 from enterprise_rag.rag.pipeline import RagPipeline
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.base import VectorIndex
 from enterprise_rag.vector_index.factory import create_vector_index
@@ -248,10 +249,13 @@ def ingest(
         pdf_page_renderer=create_pdf_page_renderer(config.ocr),
         chunking_config=config.chunking,
         sync_manifest_store=JsonSourceSyncManifestStore(index_path.with_name("source_manifest.json")),
+        index_version_store=JsonIndexVersionStore(index_path.with_name("index_version.json")),
     ).run(path, store, metadata_overrides=metadata_overrides, dry_run=dry_run)
     if dry_run:
         print("Dry run: index was not written.")
     print(f"Indexed {report.chunks_indexed} chunks from {report.documents_loaded} documents into {index_path}")
+    if report.index_version is not None:
+        print(f"Index version: {report.index_version}")
     print(
         "Ingest report: "
         f"new={report.documents_new}, "
@@ -392,6 +396,7 @@ def query(
         print("\n" + format_query_trace(trace))
 
     if log_query_path is not None:
+        index_version = JsonIndexVersionStore(index_path.with_name("index_version.json")).current_id(index_path)
         record = build_query_log_record(
             answer,
             trace,
@@ -399,6 +404,7 @@ def query(
             enable_graph=enable_graph,
             graph_max_hops=graph_max_hops,
             user_groups=user_groups,
+            index_version=index_version,
         )
         QueryLogger(log_query_path).log(record)
         print(f"\nLogged query to {log_query_path}")

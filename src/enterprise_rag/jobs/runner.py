@@ -16,6 +16,7 @@ from enterprise_rag.ingestion.sync_manifest import JsonSourceSyncManifestStore
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
 from enterprise_rag.leases.base import LeaseStore
 from enterprise_rag.leases.in_memory import InMemoryLeaseStore
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 from enterprise_rag.vector_index.factory import create_vector_index
 
@@ -109,6 +110,7 @@ class IngestJobRunner:
                 pdf_page_renderer=create_pdf_page_renderer(self.config.ocr),
                 chunking_config=self.config.chunking,
                 sync_manifest_store=JsonSourceSyncManifestStore(self.index_path.with_name("source_manifest.json")),
+                index_version_store=JsonIndexVersionStore(self.index_path.with_name("index_version.json")),
             ).run(
                 Path(job.source_path),
                 store,

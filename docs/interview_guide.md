@@ -23,6 +23,7 @@ The ingestion design treats data quality as part of retrieval quality. Instead o
 - loads source documents through a connector abstraction
 - preserves source metadata such as source system, URI, version, and update time
 - writes a source sync manifest so active and deleted source documents can be audited
+- bumps an explicit index version so query cache entries, logs, and eval runs can be tied to the exact indexed state
 - filters dirty or low-information text
 - parses headings, paragraphs, and tables
 - creates chunks that preserve document structure

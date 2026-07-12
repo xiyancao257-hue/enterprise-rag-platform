@@ -21,6 +21,7 @@ class QueryLogRecord:
     top_k: int
     enable_graph: bool
     graph_max_hops: int
+    index_version: str
     user_groups: tuple[str, ...]
     retrieved_chunk_ids: tuple[str, ...]
     final_chunk_ids: tuple[str, ...]
@@ -36,6 +37,7 @@ class QueryLogRecord:
             "top_k": self.top_k,
             "enable_graph": self.enable_graph,
             "graph_max_hops": self.graph_max_hops,
+            "index_version": self.index_version,
             "user_groups": list(self.user_groups),
             "retrieved_chunk_ids": list(self.retrieved_chunk_ids),
             "final_chunk_ids": list(self.final_chunk_ids),
@@ -60,6 +62,7 @@ def build_query_log_record(
     enable_graph: bool,
     graph_max_hops: int,
     user_groups: set[str] | None = None,
+    index_version: str = "unknown",
 ) -> QueryLogRecord:
     return QueryLogRecord(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -70,6 +73,7 @@ def build_query_log_record(
         top_k=top_k,
         enable_graph=enable_graph,
         graph_max_hops=graph_max_hops,
+        index_version=index_version,
         user_groups=tuple(sorted(user_groups or set())),
         retrieved_chunk_ids=tuple(hit.chunk_id for hit in trace.retrieved),
         final_chunk_ids=tuple(hit.chunk_id for hit in trace.final_context),

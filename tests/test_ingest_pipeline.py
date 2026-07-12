@@ -11,6 +11,7 @@ from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.processing.redaction import SensitiveDataRedactor
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -275,6 +276,40 @@ def test_incremental_ingest_marks_deleted_sources_in_manifest(tmp_path: Path) ->
     assert report.documents_deleted == 1
     assert entries[0].source_uri == source.resolve().as_uri()
     assert entries[0].status == "deleted"
+
+
+def test_incremental_ingest_bumps_index_version_after_successful_write(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    version_store = JsonIndexVersionStore(tmp_path / "index_version.json")
+
+    report = IncrementalIngestPipeline(index_version_store=version_store).run(raw_dir, store)
+
+    current_version = version_store.current()
+    assert report.index_version == version_store.current_id(store.path)
+    assert current_version is not None
+    assert current_version.sequence == 1
+
+
+def test_incremental_ingest_dry_run_does_not_bump_index_version(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_dir.joinpath("guide.md").write_text(
+        "# Guide\n\nHybrid retrieval combines BM25 and vector search.",
+        encoding="utf-8",
+    )
+    store = JsonChunkStore(tmp_path / "chunks.json")
+    version_store = JsonIndexVersionStore(tmp_path / "index_version.json")
+
+    report = IncrementalIngestPipeline(index_version_store=version_store).run(raw_dir, store, dry_run=True)
+
+    assert report.index_version is None
+    assert version_store.current() is None
 
 
 def test_incremental_ingest_records_cleaner_filter_reason(tmp_path: Path) -> None:

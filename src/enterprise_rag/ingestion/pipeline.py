@@ -14,6 +14,7 @@ from enterprise_rag.processing.chunking import StructureAwareChunker
 from enterprise_rag.processing.cleaning import DirtyDataCleaner
 from enterprise_rag.processing.parser import StructureParser
 from enterprise_rag.processing.redaction import SensitiveDataRedactor
+from enterprise_rag.storage.index_version import JsonIndexVersionStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 FILTER_LOW_QUALITY_TEXT = "low_quality_text"
@@ -30,6 +31,7 @@ class IngestReport:
     chunks_indexed: int
     chunks_upserted: tuple[str, ...] = ()
     chunks_deleted: tuple[str, ...] = ()
+    index_version: str | None = None
     filter_reasons: dict[str, int] = field(default_factory=dict)
     filtered_documents: tuple[FilteredDocument, ...] = ()
     dry_run: bool = False
@@ -48,6 +50,7 @@ class IncrementalIngestPipeline:
         pdf_page_renderer: PdfPageRenderer | None = None,
         source_connector: SourceConnector | None = None,
         sync_manifest_store: SourceSyncManifestStore | None = None,
+        index_version_store: JsonIndexVersionStore | None = None,
     ) -> None:
         self.cleaner = cleaner or DirtyDataCleaner()
         self.redactor = redactor or SensitiveDataRedactor()
@@ -63,6 +66,7 @@ class IncrementalIngestPipeline:
             pdf_page_renderer=self.pdf_page_renderer,
         )
         self.sync_manifest_store = sync_manifest_store
+        self.index_version_store = index_version_store
 
     def run(
         self,
@@ -132,6 +136,12 @@ class IncrementalIngestPipeline:
                     documents=tuple(documents),
                     deleted_source_uris=tuple(source_uri for _, source_uri in deleted_sources),
                 )
+            if self.index_version_store is not None:
+                index_version = self.index_version_store.bump(reason="ingest", index_path=store.path).version_id
+            else:
+                index_version = None
+        else:
+            index_version = None
         return IngestReport(
             documents_loaded=len(documents),
             documents_new=documents_new,
@@ -142,6 +152,7 @@ class IncrementalIngestPipeline:
             chunks_indexed=len(next_chunks),
             chunks_upserted=tuple(chunks_upserted),
             chunks_deleted=tuple(chunks_deleted),
+            index_version=index_version,
             filter_reasons=filter_reasons,
             filtered_documents=tuple(filtered_documents),
             dry_run=dry_run,

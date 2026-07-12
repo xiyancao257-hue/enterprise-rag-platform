@@ -213,6 +213,7 @@ Ingestion:
 - Images can be routed through `ingestion/ocr.py`; by default OCR is disabled rather than silently guessing.
 - Connector metadata such as `source_system`, `source_uri`, `source_version`, and `source_updated_at` is propagated to chunks.
 - `ingestion/sync_manifest.py` tracks source sync state so updated and deleted sources can be audited independently from chunks.
+- `storage/index_version.py` records explicit index versions for cache invalidation, query logs, and reproducible evaluation.
 - `processing/cleaning.py` filters low-quality or duplicated text.
 - `processing/parser.py` preserves headings, paragraphs, and tables as document blocks.
 - `processing/chunking.py` creates structure-aware chunks with source metadata.
