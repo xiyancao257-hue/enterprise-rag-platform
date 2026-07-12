@@ -69,13 +69,13 @@ docker compose up api
 Production-style Compose wiring:
 
 ```bash
-export ENTERPRISE_RAG_API_KEY="replace-with-real-api-key"
-export ENTERPRISE_RAG_API_KEYS="$ENTERPRISE_RAG_API_KEY"
+cp .env.example .env
+# Edit .env and replace ENTERPRISE_RAG_API_KEY / ENTERPRISE_RAG_API_KEYS.
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up api worker qdrant redis
 ```
 
 This uses `config/production.example.json`, Qdrant, Redis cache, Redis leases, persistent app data,
-API key auth, audit logging, and guardrail budgets.
+API key auth, audit logging, provider retry/circuit-breaker settings, and guardrail budgets.
 
 Health check:
 
@@ -163,6 +163,14 @@ Or through the production-style API:
 
 ```bash
 curl http://localhost:8000/readiness \
+  -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
+  -H "X-Tenant-ID: acme"
+```
+
+Operational status endpoint:
+
+```bash
+curl http://localhost:8000/admin/ops/status \
   -H "X-API-Key: $ENTERPRISE_RAG_API_KEY" \
   -H "X-Tenant-ID: acme"
 ```
