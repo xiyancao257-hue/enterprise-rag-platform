@@ -1,10 +1,12 @@
 import json
 
 from enterprise_rag.evaluation.eval_generation import (
+    generate_eval_cases_from_feedback,
     generate_eval_cases_from_logs,
     promote_reviewed_eval_draft,
     write_generated_eval_cases,
 )
+from enterprise_rag.observability.feedback import FeedbackRecord, JsonFeedbackStore
 
 
 def test_generate_eval_cases_from_failed_query_logs(tmp_path) -> None:
@@ -37,6 +39,66 @@ def test_generate_eval_cases_from_failed_query_logs(tmp_path) -> None:
     assert cases[0].id.startswith("log_1_missing_escalation_path")
     assert cases[0].expected_text_contains == ()
     assert "manual review" in cases[0].notes
+
+
+def test_generate_eval_cases_from_negative_feedback(tmp_path) -> None:
+    feedback_path = tmp_path / "feedback.jsonl"
+    store = JsonFeedbackStore(feedback_path)
+    store.append(
+        FeedbackRecord(
+            feedback_id="fb_positive",
+            request_id="req_positive",
+            query="working query",
+            answer="ok",
+            rating="positive",
+        )
+    )
+    store.append(
+        FeedbackRecord(
+            feedback_id="fb_negative",
+            request_id="req_negative",
+            query="wrong citation query",
+            answer="bad answer",
+            rating="negative",
+            citation_chunk_ids=("chunk_bad",),
+            labels=("wrong_citation",),
+            comment="Citation does not support the answer.",
+        )
+    )
+
+    cases = generate_eval_cases_from_feedback(feedback_path)
+
+    assert len(cases) == 1
+    assert cases[0].id.startswith("feedback_1_wrong_citation_query")
+    assert cases[0].query == "wrong citation query"
+    assert cases[0].expected_text_contains == ()
+    assert "wrong_citation" in cases[0].notes
+    assert "chunk_bad" in cases[0].notes
+    assert "manual review" in cases[0].notes
+
+
+def test_generate_eval_cases_from_feedback_deduplicates_and_respects_limit(tmp_path) -> None:
+    feedback_path = tmp_path / "feedback.jsonl"
+    store = JsonFeedbackStore(feedback_path)
+    for feedback_id, query in (
+        ("fb_1", "same bad answer"),
+        ("fb_2", "same bad answer"),
+        ("fb_3", "second bad answer"),
+    ):
+        store.append(
+            FeedbackRecord(
+                feedback_id=feedback_id,
+                request_id=f"req_{feedback_id}",
+                query=query,
+                answer="bad answer",
+                rating="negative",
+            )
+        )
+
+    cases = generate_eval_cases_from_feedback(feedback_path, limit=1)
+
+    assert len(cases) == 1
+    assert cases[0].query == "same bad answer"
 
 
 def test_generate_eval_cases_deduplicates_queries_and_respects_limit(tmp_path) -> None:

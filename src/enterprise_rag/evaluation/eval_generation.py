@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from enterprise_rag.observability.feedback import JsonFeedbackStore
 from enterprise_rag.observability.log_analysis import load_query_log_records
 
 
@@ -49,6 +50,30 @@ def generate_eval_cases_from_logs(path: Path, limit: int = 20) -> list[Generated
                 query=query,
                 expected_text_contains=(),
                 notes=_notes_for_record(record),
+            )
+        )
+        if len(cases) >= limit:
+            break
+
+    return cases
+
+
+def generate_eval_cases_from_feedback(path: Path, limit: int = 20) -> list[GeneratedEvalCase]:
+    records = [record for record in JsonFeedbackStore(path).load() if record.rating == "negative"]
+    cases = []
+    seen_queries = set()
+
+    for record in records:
+        query = record.query.strip()
+        if not query or query in seen_queries:
+            continue
+        seen_queries.add(query)
+        cases.append(
+            GeneratedEvalCase(
+                id=f"feedback_{len(cases) + 1}_{_slugify(query)}",
+                query=query,
+                expected_text_contains=(),
+                notes=_notes_for_feedback(record),
             )
         )
         if len(cases) >= limit:
@@ -109,6 +134,19 @@ def _notes_for_record(record: dict[str, Any]) -> str:
     reason_text = ", ".join(reasons) if reasons else "query log review"
     return (
         f"Generated from query log because of {reason_text}. "
+        "Fill expected_text_contains after manual review before using this as a regression eval case."
+    )
+
+
+def _notes_for_feedback(record: object) -> str:
+    labels = ", ".join(getattr(record, "labels", ())) or "negative feedback"
+    citation_ids = ", ".join(getattr(record, "citation_chunk_ids", ())) or "none"
+    comment = getattr(record, "comment", "")
+    comment_text = f" User comment: {comment}" if comment else ""
+    return (
+        f"Generated from negative user feedback. Labels: {labels}. "
+        f"Original query request: {getattr(record, 'request_id', '')}. "
+        f"Citation chunk ids: {citation_ids}.{comment_text} "
         "Fill expected_text_contains after manual review before using this as a regression eval case."
     )
 

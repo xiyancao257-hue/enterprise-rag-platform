@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,7 @@ from enterprise_rag import cli
 from enterprise_rag.config import AppConfig
 from enterprise_rag.jobs.ingest_jobs import JsonIngestJobStore
 from enterprise_rag.models import Chunk
+from enterprise_rag.observability.feedback import FeedbackRecord, JsonFeedbackStore
 from enterprise_rag.storage.json_store import JsonChunkStore
 
 
@@ -159,3 +161,26 @@ def test_eval_markdown_report_cli_writes_report_file(tmp_path: Path, capsys: obj
     assert "# Portfolio Eval" in markdown
     assert "- Recall@1: 1.00" in markdown
     assert "- Failures: 0" in markdown
+
+
+def test_generate_eval_from_feedback_cli_writes_draft_cases(tmp_path: Path, capsys: object) -> None:
+    feedback_path = tmp_path / "feedback.jsonl"
+    output_path = tmp_path / "generated_from_feedback.json"
+    JsonFeedbackStore(feedback_path).append(
+        FeedbackRecord(
+            feedback_id="fb_123",
+            request_id="req_query_123",
+            query="wrong citation query",
+            answer="bad answer",
+            rating="negative",
+            labels=("wrong_citation",),
+        )
+    )
+
+    cli.generate_eval_from_feedback(feedback_path, output_path, limit=10)
+
+    output = capsys.readouterr().out
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert f"Wrote 1 feedback draft eval cases to {output_path}" in output
+    assert payload[0]["id"] == "feedback_1_wrong_citation_query"
+    assert payload[0]["query"] == "wrong citation query"

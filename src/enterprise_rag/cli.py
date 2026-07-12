@@ -10,6 +10,7 @@ from enterprise_rag.config import AppConfig, load_config
 from enterprise_rag.embeddings.base import EmbeddingModel
 from enterprise_rag.embeddings.factory import create_embedding_model
 from enterprise_rag.evaluation.eval_generation import (
+    generate_eval_cases_from_feedback,
     generate_eval_cases_from_logs,
     promote_reviewed_eval_draft,
     write_generated_eval_cases,
@@ -160,6 +161,14 @@ def main() -> None:
     generate_eval_parser.add_argument("--output", type=Path, required=True)
     generate_eval_parser.add_argument("--limit", type=int, default=20)
 
+    generate_eval_from_feedback_parser = subparsers.add_parser(
+        "generate-eval-from-feedback",
+        help="Generate draft retrieval eval cases from negative user feedback",
+    )
+    generate_eval_from_feedback_parser.add_argument("feedback_path", type=Path)
+    generate_eval_from_feedback_parser.add_argument("--output", type=Path, required=True)
+    generate_eval_from_feedback_parser.add_argument("--limit", type=int, default=20)
+
     promote_eval_parser = subparsers.add_parser(
         "promote-eval-draft",
         help="Promote human-reviewed eval draft cases into a formal eval file",
@@ -266,6 +275,8 @@ def main() -> None:
         analyze_logs(args.log_path)
     elif args.command == "generate-eval-from-logs":
         generate_eval_from_logs(args.log_path, args.output, args.limit)
+    elif args.command == "generate-eval-from-feedback":
+        generate_eval_from_feedback(args.feedback_path, args.output, args.limit)
     elif args.command == "promote-eval-draft":
         promote_eval_draft(args.draft_path, args.output)
     elif args.command == "suggest-evidence":
@@ -553,6 +564,12 @@ def generate_eval_from_logs(log_path: Path, output_path: Path, limit: int) -> No
     cases = generate_eval_cases_from_logs(log_path, limit=limit)
     write_generated_eval_cases(cases, output_path)
     print(f"Wrote {len(cases)} draft eval cases to {output_path}")
+
+
+def generate_eval_from_feedback(feedback_path: Path, output_path: Path, limit: int) -> None:
+    cases = generate_eval_cases_from_feedback(feedback_path, limit=limit)
+    write_generated_eval_cases(cases, output_path)
+    print(f"Wrote {len(cases)} feedback draft eval cases to {output_path}")
 
 
 def promote_eval_draft(draft_path: Path, output_path: Path) -> None:

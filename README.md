@@ -280,6 +280,9 @@ enterprise-rag self-healing-report data/logs/query_log.jsonl \
   --index data/processed/chunks.json \
   --workdir data/eval/self_healing
 
+enterprise-rag generate-eval-from-feedback data/feedback/feedback.jsonl \
+  --output data/eval/self_healing/generated_from_feedback.json
+
 enterprise-rag approve-suggested-evidence \
   data/eval/self_healing/generated_with_suggestions.json \
   --case-id log_1_missing_escalation_path \
