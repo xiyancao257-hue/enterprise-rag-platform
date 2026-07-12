@@ -23,3 +23,15 @@ class OcrAdapter(Protocol):
 class DisabledOcrAdapter:
     def extract_text(self, path: Path) -> OcrResult:
         raise OcrUnavailableError(f"OCR is not configured for {path}.")
+
+
+@dataclass(frozen=True)
+class UnconfiguredOcrAdapter:
+    provider: str
+    setup_hint: str
+
+    def extract_text(self, path: Path) -> OcrResult:
+        raise OcrUnavailableError(
+            f"OCR provider `{self.provider}` is selected, but no runtime adapter is configured for {path}. "
+            f"{self.setup_hint}"
+        )

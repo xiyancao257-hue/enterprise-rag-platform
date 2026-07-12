@@ -53,6 +53,13 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
                 "allowed_extensions": [".md", ".txt", ".html"],
                 "max_file_bytes": 2048,
             },
+            "ocr": {
+                "provider": "tesseract",
+                "tesseract_cmd": "/opt/bin/tesseract",
+                "aws_region": "us-west-2",
+                "azure_endpoint_env_var": "AZURE_DI_ENDPOINT",
+                "azure_key_env_var": "AZURE_DI_KEY",
+            },
             "chunking": {
                 "default": {
                     "target_tokens": 200,
@@ -118,6 +125,11 @@ def test_parse_config_loads_retrieval_and_security_settings() -> None:
     assert config.ingestion.allowed_source_roots == ("data/raw", "/mnt/shared/rag")
     assert config.ingestion.allowed_extensions == (".md", ".txt", ".html")
     assert config.ingestion.max_file_bytes == 2048
+    assert config.ocr.provider == "tesseract"
+    assert config.ocr.tesseract_cmd == "/opt/bin/tesseract"
+    assert config.ocr.aws_region == "us-west-2"
+    assert config.ocr.azure_endpoint_env_var == "AZURE_DI_ENDPOINT"
+    assert config.ocr.azure_key_env_var == "AZURE_DI_KEY"
     assert config.chunking.default.target_tokens == 200
     assert config.chunking.default.max_tokens == 320
     assert config.chunking.by_extension[".md"].target_tokens == 260
@@ -191,3 +203,4 @@ def test_production_example_config_loads() -> None:
     assert config.audit.enabled is True
     assert config.guardrails.max_estimated_cost_usd == 0.02
     assert config.ingestion.allowed_source_roots
+    assert config.ocr.provider == "disabled"

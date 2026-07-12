@@ -57,6 +57,15 @@ class IngestionConfig:
 
 
 @dataclass(frozen=True)
+class OcrConfig:
+    provider: str = "disabled"
+    tesseract_cmd: str = "tesseract"
+    aws_region: str = ""
+    azure_endpoint_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
+    azure_key_env_var: str = "AZURE_DOCUMENT_INTELLIGENCE_KEY"
+
+
+@dataclass(frozen=True)
 class ChunkingProfileConfig:
     target_tokens: int = 220
     max_tokens: int = 360
@@ -121,6 +130,7 @@ class AppConfig:
     vector_index: VectorIndexConfig = field(default_factory=VectorIndexConfig)
     jobs: JobsConfig = field(default_factory=JobsConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
+    ocr: OcrConfig = field(default_factory=OcrConfig)
     chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardrails: GuardrailsConfig = field(default_factory=GuardrailsConfig)
@@ -154,6 +164,7 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
     vector_index_data = _section(data, "vector_index")
     jobs_data = _section(data, "jobs")
     ingestion_data = _section(data, "ingestion")
+    ocr_data = _section(data, "ocr")
     chunking_data = _section(data, "chunking")
     llm_data = _section(data, "llm")
     guardrails_data = _section(data, "guardrails")
@@ -210,6 +221,13 @@ def parse_config(data: dict[str, Any]) -> AppConfig:
                 for extension in ingestion_data.get("allowed_extensions", IngestionConfig.allowed_extensions)
             ),
             max_file_bytes=int(ingestion_data.get("max_file_bytes", IngestionConfig.max_file_bytes)),
+        ),
+        ocr=OcrConfig(
+            provider=str(ocr_data.get("provider", OcrConfig.provider)),
+            tesseract_cmd=str(ocr_data.get("tesseract_cmd", OcrConfig.tesseract_cmd)),
+            aws_region=str(ocr_data.get("aws_region", OcrConfig.aws_region)),
+            azure_endpoint_env_var=str(ocr_data.get("azure_endpoint_env_var", OcrConfig.azure_endpoint_env_var)),
+            azure_key_env_var=str(ocr_data.get("azure_key_env_var", OcrConfig.azure_key_env_var)),
         ),
         chunking=_parse_chunking_config(chunking_data),
         llm=LLMConfig(

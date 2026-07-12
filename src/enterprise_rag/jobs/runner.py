@@ -9,6 +9,7 @@ from enterprise_rag.cache.base import CacheStore
 from enterprise_rag.cache.in_memory import InMemoryCache
 from enterprise_rag.config import AppConfig
 from enterprise_rag.indexing.vector_sync import VectorIndexSync
+from enterprise_rag.ingestion.ocr_factory import create_ocr_adapter
 from enterprise_rag.ingestion.pipeline import IncrementalIngestPipeline
 from enterprise_rag.ingestion.policy import IngestionFilePolicy
 from enterprise_rag.jobs.ingest_jobs import IngestJobRecord, IngestJobStore
@@ -103,6 +104,7 @@ class IngestJobRunner:
             store = JsonChunkStore(self.index_path)
             report = IncrementalIngestPipeline(
                 file_policy=IngestionFilePolicy.from_config(self.config.ingestion),
+                ocr_adapter=create_ocr_adapter(self.config.ocr),
                 chunking_config=self.config.chunking,
             ).run(
                 Path(job.source_path),

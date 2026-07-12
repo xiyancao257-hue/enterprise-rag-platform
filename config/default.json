@@ -30,6 +30,13 @@
     "allowed_extensions": [".txt", ".md", ".csv", ".pdf"],
     "max_file_bytes": 10000000
   },
+  "ocr": {
+    "provider": "disabled",
+    "tesseract_cmd": "tesseract",
+    "aws_region": "",
+    "azure_endpoint_env_var": "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
+    "azure_key_env_var": "AZURE_DOCUMENT_INTELLIGENCE_KEY"
+  },
   "chunking": {
     "default": {
       "target_tokens": 220,

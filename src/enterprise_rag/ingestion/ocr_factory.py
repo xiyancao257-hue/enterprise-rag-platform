@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from enterprise_rag.config import OcrConfig
+from enterprise_rag.ingestion.ocr import DisabledOcrAdapter, OcrAdapter, UnconfiguredOcrAdapter
+
+
+def create_ocr_adapter(config: OcrConfig) -> OcrAdapter:
+    provider = config.provider.lower().strip()
+    if provider in {"disabled", "none", ""}:
+        return DisabledOcrAdapter()
+    if provider == "tesseract":
+        return UnconfiguredOcrAdapter(
+            provider=provider,
+            setup_hint=f"Install Tesseract and wire a subprocess adapter using `{config.tesseract_cmd}`.",
+        )
+    if provider == "aws_textract":
+        region_hint = f" in region `{config.aws_region}`" if config.aws_region else ""
+        return UnconfiguredOcrAdapter(
+            provider=provider,
+            setup_hint=f"Configure AWS Textract credentials{region_hint} and wire a boto3 adapter.",
+        )
+    if provider == "azure_document_intelligence":
+        return UnconfiguredOcrAdapter(
+            provider=provider,
+            setup_hint=(
+                "Configure Azure Document Intelligence credentials from "
+                f"`{config.azure_endpoint_env_var}` and `{config.azure_key_env_var}`."
+            ),
+        )
+    raise ValueError(f"Unsupported OCR provider `{config.provider}`.")
