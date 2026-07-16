@@ -11,6 +11,10 @@ It starts small, but the architecture is shaped around real enterprise RAG probl
 - knowledge graph enhanced retrieval for entity relationship questions
 - observability, retrieval evaluation, and human-in-the-loop RAG self-healing
 
+For interview-specific notes on prompt engineering, zero-shot/few-shot prompting,
+RAG evaluation dimensions, and RAFT, see
+[`docs/prompting_and_rag_eval.md`](docs/prompting_and_rag_eval.md).
+
 ## Quick Start
 
 ```bash

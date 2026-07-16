@@ -105,6 +105,10 @@ The evaluation layer is intentionally part of the architecture, not an afterthou
 - Evidence suggestions help humans promote reviewed cases into regression tests.
 - LLM-as-judge support exists, with the expectation that human review is still needed for critical cases.
 
+For the interview mapping of zero-shot prompting, few-shot prompting, chain-of-thought handling,
+context relevance, faithfulness, answer correctness, and RAFT, see
+[`prompting_and_rag_eval.md`](prompting_and_rag_eval.md).
+
 ## Interview Walkthrough
 
 Use this order when explaining the project:
